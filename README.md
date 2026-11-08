@@ -55,7 +55,7 @@ reports/tim.md, reports/individu/<nim>.md, AI_LOG.md
 | 7. Skala | XIII | `python unduh_data.py --arsip-wdi`; revisi seri pembanding antar-142 rilis; pandas vs DuckDB/Dask |
 | 8. Dokumentasi dan validasi | XIV–XV | Lineage ke berkas mentah, data dictionary, skema validasi otomatis |
 
-## Yang dibakukan untuk semua tim
+## Yang dilakukan untuk semua tim
 
 - **Skema minimal Silver** (`src/common/skema.py`): `sumber, seri_kode, wilayah_kode, nama_wilayah,
   periode, jenis_periode, rincian, nilai, satuan, _berkas_raw, _sha256_raw`. Kunci unik:
