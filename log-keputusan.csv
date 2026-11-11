@@ -1,6 +1,3 @@
 id,tanggal,nim,tahap,seri_kode,keputusan,alternatif_ditolak,alasan,dampak_baris
-<<<<<<< HEAD
 K-001,2026-11-08,124450112,sprint0,var1473,"Pemetaan nama wilayah BPS ke standar 38 provinsi Indonesia","Tetap memakai nama lama BPS","Menyeragamkan kode dan nama wilayah provinsi untuk penggabungan data",38
-=======
 K-001,2026-11-08,124450088,sprint0,var1473,"Pemetaan nama wilayah BPS ke standar 38 provinsi Indonesia","Tetap memakai nama lama BPS","Menyeragamkan kode dan nama wilayah provinsi untuk penggabungan data",38
->>>>>>> 61df7f8373cc0586ee713e59e121a050f0b9a4b6
