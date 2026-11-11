@@ -13,8 +13,8 @@ def hitung_sha256(file_path):
 
 def baca_wdi(file_path):
     """
-    Membaca berkas WDI JSON, mengekstrak metadata raw,
-    serta mengubah struktur data bersarang menjadi tabel panjang (tidy data).
+    Membaca berkas WDI JSON, menyaring berdasarkan indicator.id (SN.ITK.DEFC.ZS & SN.ITK.MSFI.ZS),
+    mengekstraksi metadata raw, serta mengubah struktur data menjadi tabel panjang (tidy data).
     """
     path_obj = Path(file_path)
     berkas_raw = str(path_obj)
@@ -24,27 +24,30 @@ def baca_wdi(file_path):
         data = json.load(f)
         
     parsed_rows = []
+    target_indicators = {'SN.ITK.DEFC.ZS', 'SN.ITK.MSFI.ZS'}
     
     # Format World Bank API: data[0] adalah metadata, data[1] adalah list data aktual
     if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list):
         records = data[1]
         for item in records:
             if isinstance(item, dict):
-                # Ekstraksi aman untuk struktur bersarang (nested dict)
-                country_dict = item.get('country', {})
                 indicator_dict = item.get('indicator', {})
+                ind_id = indicator_dict.get('id') if isinstance(indicator_dict, dict) else None
                 
-                row = {
-                    'country_code': country_dict.get('id') if isinstance(country_dict, dict) else None,
-                    'country_name': country_dict.get('value') if isinstance(country_dict, dict) else None,
-                    'indicator_code': indicator_dict.get('id') if isinstance(indicator_dict, dict) else None,
-                    'indicator_name': indicator_dict.get('value') if isinstance(indicator_dict, dict) else None,
-                    'year': item.get('date'),
-                    'value': item.get('value'),
-                    '_berkas_raw': berkas_raw,
-                    '_sha256_raw': sha256_raw
-                }
-                parsed_rows.append(row)
+                # Saring hanya untuk seri indikator kasus 1
+                if ind_id in target_indicators:
+                    country_dict = item.get('country', {})
+                    row = {
+                        'country_code': country_dict.get('id') if isinstance(country_dict, dict) else None,
+                        'country_name': country_dict.get('value') if isinstance(country_dict, dict) else None,
+                        'indicator_id': ind_id,
+                        'indicator_name': indicator_dict.get('value') if isinstance(indicator_dict, dict) else None,
+                        'year': item.get('date'),
+                        'value': item.get('value'),
+                        '_berkas_raw': berkas_raw,
+                        '_sha256_raw': sha256_raw
+                    }
+                    parsed_rows.append(row)
                 
     df = pd.DataFrame(parsed_rows)
     return df
@@ -55,12 +58,9 @@ if __name__ == "__main__":
     if dir_wdi.exists():
         total_baris_global = 0
         for file_json in dir_wdi.glob("*.json"):
-            print(f"\nMemproses: {file_json.name}")
             df_hasil = baca_wdi(file_json)
-            print(f"Jumlah baris terekstraksi: {len(df_hasil)}")
-            if not df_hasil.empty:
-                print(df_hasil.head(2))  # Menampilkan 2 sampel baris pertama
+            print(f"Berkas: {file_json.name} | Jumlah Baris Terfiltrasi: {len(df_hasil)}")
             total_baris_global += len(df_hasil)
-        print(f"\nTotal keseluruhan baris data WDI: {total_baris_global}")
+        print(f"\nTotal keseluruhan baris WDI setelah filter seri kasus: {total_baris_global}")
     else:
         print(f"Direktori {dir_wdi} tidak ditemukan.")
