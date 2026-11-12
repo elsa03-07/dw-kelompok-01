@@ -1,68 +1,44 @@
-"""Pembaca WHO GHO (3 CSV, 2 JSON). Tahap 1: tidak membersihkan apa pun.
+"""Tahap 1 – Ekstraksi. Milik tim.
 
-DIM_* kosong = dimensi tidak berlaku untuk baris itu (bukan data hilang),
-jadi semua kolom dibaca sebagai string dan kosong tidak diubah jadi NaN.
+Baca setiap berkas di data/raw/ menjadi DataFrame mentah 
+serta catat atribut lineage (_berkas_raw dan _sha256_raw).
 """
-from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
+from src.ekstraksi import bps_reader, wdi_reader, who_reader
 
-import pandas as pd
-
-
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for blok in iter(lambda: f.read(1 << 20), b""):
-            h.update(blok)
-    return h.hexdigest()
-
-
-def _tempel_asal(df: pd.DataFrame, path: Path) -> pd.DataFrame:
-    df["_berkas_raw"] = path.name
-    df["_sha256_raw"] = _sha256(path)
-    return df
-
-
-def baca_csv(path) -> pd.DataFrame:
-    path = Path(path)
-    df = pd.read_csv(path, dtype=str, keep_default_na=False, na_values=[])
-    return _tempel_asal(df, path)
-
-
-def baca_json(path) -> pd.DataFrame:
-    path = Path(path)
-    with open(path, encoding="utf-8") as f:
-        isi = json.load(f)
-    if isinstance(isi, dict) and isinstance(isi.get("value"), list):
-        isi = isi["value"]
-    elif isinstance(isi, dict):
-        isi = [isi]
-    df = pd.json_normalize(isi, sep=".")
-    df = df.astype(object).where(df.notna(), "")
-    return _tempel_asal(df, path)
-
-
-def baca_berkas(path) -> pd.DataFrame:
-    path = Path(path)
-    if path.suffix.lower() == ".csv":
-        return baca_csv(path)
-    if path.suffix.lower() == ".json":
-        return baca_json(path)
-    raise ValueError(f"Ekstensi tidak didukung: {path}")
-
-
-def baca_semua(folder) -> dict[str, pd.DataFrame]:
+def jalankan():
+    """Kembalikan {nama_sumber: DataFrame mentah}."""
     hasil = {}
-    for p in sorted(Path(folder).rglob("*")):
-        if p.suffix.lower() in {".csv", ".json"}:
-            hasil[p.name] = baca_berkas(p)
+    
+    # 1. Membaca data BPS
+    try:
+        bps_hasil = bps_reader.baca_semua("data/raw")
+        if isinstance(bps_hasil, dict):
+            hasil.update(bps_hasil)
+    except Exception as e:
+        print(f"Catatan BPS reader: {e}")
+
+    # 2. Membaca data WDI
+    try:
+        wdi_dir = Path("data/raw/wdi")
+        if wdi_dir.exists():
+            for file_json in wdi_dir.rglob("*.json"):
+                df_wdi = wdi_reader.baca_wdi(file_json)
+                if df_wdi is not None and not df_wdi.empty:
+                    hasil[file_json.name] = df_wdi
+    except Exception as e:
+        print(f"Catatan WDI reader: {e}")
+
+    # 3. Membaca data WHO GHO
+    try:
+        who_hasil = who_reader.baca_semua("data/raw")
+        if isinstance(who_hasil, dict):
+            hasil.update(who_hasil)
+    except Exception as e:
+        print(f"Catatan WHO reader: {e}")
+
+    if not hasil:
+        raise NotImplementedError("Tahap 1: Belum ada data mentah yang berhasil dimuat.")
+        
     return hasil
-
-if __name__ == "__main__":
-    import sys
-
-    for nama, df in baca_semua(sys.argv[1]).items():
-        print(f"{nama}: {len(df)} baris, {df.shape[1]} kolom")
