@@ -1,13 +1,14 @@
 {
   "metrik": {
-    "baris_raw_diperiksa": 646,
+    "baris_silver": 1439,
+    "sel_kosong_grid": 28,
+    "outlier_ditandai": 45,
     "calon_anomali_terdeteksi": 61,
-    "outlier_asli": 45,
     "patahan_seri": 16,
     "galat_input": 0,
-    "keputusan_dicatat": 3
+    "keputusan_dicatat": 5
   },
   "seed": 0,
   "data_hash": "16975e3f357e3355c9802a5bb55e462fac15810c27fd856ef7ef049af4873db9",
-  "perangkat": "Windows AMD64 Python 3.14.10"
+  "perangkat": "Windows AMD64 Python 3.15.2"
 }
