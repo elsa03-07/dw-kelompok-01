@@ -23,7 +23,7 @@ def bangun_silver(raw_dir=RAW):
     file_1473 = "bps/2026-10-20/sdg2_2_1_1_v1473.csv"
     sha_1473 = sha256_raw(file_1473, raw_dir)
     df_1473 = pd.read_csv(Path(raw_dir) / file_1473)
-    validasi_periode_bps(df_1473['Periode'], 'var1473')
+    validasi_periode_bps(df_1473['periode'], 'var1473')
     for _, r in df_1473.iterrows():
         rows.append({
             'sumber': 'bps',
@@ -43,7 +43,7 @@ def bangun_silver(raw_dir=RAW):
     file_1474 = "bps/2026-10-20/sdg2_2_1_2_v1474.csv"
     sha_1474 = sha256_raw(file_1474, raw_dir)
     df_1474 = pd.read_csv(Path(raw_dir) / file_1474)
-    validasi_periode_bps(df_1474['Periode'], 'var1474')
+    validasi_periode_bps(df_1474['periode'], 'var1474')
     for _, r in df_1474.iterrows():
         rows.append({
             'sumber': 'bps',
