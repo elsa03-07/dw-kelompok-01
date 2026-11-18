@@ -9,6 +9,11 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 from src.common.manifest import sha256_raw, baca, RAW
 from src.common.skema import periksa_silver
+from src.silver.periode import (
+    validasi_periode_bps,
+    validasi_periode_wdi,
+    validasi_periode_who,
+)
 
 def bangun_silver(raw_dir=RAW):
     manifest = baca(raw_dir)
@@ -18,6 +23,7 @@ def bangun_silver(raw_dir=RAW):
     file_1473 = "bps/2026-10-20/sdg2_2_1_1_v1473.csv"
     sha_1473 = sha256_raw(file_1473, raw_dir)
     df_1473 = pd.read_csv(Path(raw_dir) / file_1473)
+    validasi_periode_bps(df_1473['Periode'], 'var1473')
     for _, r in df_1473.iterrows():
         rows.append({
             'sumber': 'bps',
@@ -37,6 +43,7 @@ def bangun_silver(raw_dir=RAW):
     file_1474 = "bps/2026-10-20/sdg2_2_1_2_v1474.csv"
     sha_1474 = sha256_raw(file_1474, raw_dir)
     df_1474 = pd.read_csv(Path(raw_dir) / file_1474)
+    validasi_periode_bps(df_1474['Periode'], 'var1474')
     for _, r in df_1474.iterrows():
         rows.append({
             'sumber': 'bps',
@@ -65,6 +72,7 @@ def bangun_silver(raw_dir=RAW):
                 val = item.get('value')
                 yr = item.get('date')
                 if country == 'ID' and ind in ['SN.ITK.DEFC.ZS', 'SN.ITK.MSFI.ZS'] and val is not None:
+                    validasi_periode_wdi([yr], str(ind))
                     rows.append({
                         'sumber': 'wdi',
                         'seri_kode': str(ind),
@@ -83,6 +91,7 @@ def bangun_silver(raw_dir=RAW):
     file_stunt = "who_gho/2026-10-20/datadot/5F8A486_NUTSTUNTINGPREV.csv"
     sha_stunt = sha256_raw(file_stunt, raw_dir)
     df_stunt = pd.read_csv(Path(raw_dir) / file_stunt)
+    validasi_periode_who(df_stunt['DIM_TIME_TYPE'], 'NUTSTUNTINGPREV')
     for _, r in df_stunt.iterrows():
         val = r['RATE_PER_100_N']
         if pd.notna(val):
@@ -104,6 +113,7 @@ def bangun_silver(raw_dir=RAW):
     file_ow = "who_gho/2026-10-20/datadot/64E2430_NUTOVERWEIGHTPREV.csv"
     sha_ow = sha256_raw(file_ow)
     df_ow = pd.read_csv(Path(raw_dir) / file_ow)
+    validasi_periode_who(df_ow['DIM_TIME_TYPE'], 'NUTOVERWEIGHTPREV')
     for _, r in df_ow.iterrows():
         val = r['RATE_PER_100_N']
         if pd.notna(val):
@@ -125,6 +135,7 @@ def bangun_silver(raw_dir=RAW):
     file_wh2 = "who_gho/2026-10-20/datadot/FC5231F_NUTRITION_WH_2.csv"
     sha_wh2 = sha256_raw(file_wh2, raw_dir)
     df_wh2 = pd.read_csv(Path(raw_dir) / file_wh2)
+    validasi_periode_who(df_wh2['DIM_TIME_TYPE'], 'NUTRITION_WH_2')
     dim_cols = [c for c in df_wh2.columns if c.startswith('DIM_') and c not in ['DIM_TIME', 'DIM_TIME_TYPE', 'DIM_GEO_CODE_M49', 'DIM_GEO_CODE_TYPE', 'DIM_PUBLISH_STATE_CODE']]
     for _, r in df_wh2.iterrows():
         val = r['RATE_PER_100_N']
