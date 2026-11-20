@@ -158,9 +158,27 @@ def bangun_silver(raw_dir=RAW):
 
     df = pd.DataFrame(rows)
     KUNCI = ["sumber", "seri_kode", "wilayah_kode", "periode", "rincian", "_berkas_raw"]
-    # Deduplikasi sesuai aturan K-003: baris ganda dipertahankan observasi terakhir
-    df = df.drop_duplicates(subset=KUNCI, keep='last').reset_index(drop=True)
-    
+
+    konflik_wh2_k009 = (
+        (df["sumber"] == "who_gho")
+        & (df["seri_kode"] == "NUTRITION_WH_2")
+        & (df["wilayah_kode"] == 9999)
+        & (df["periode"] == "2008")
+        & (df["rincian"] == "SEX=MALE; AGE=MONTHS24-35")
+        & ((df["nilai"] - 15.7).abs() < 1e-9)
+    )
+    if int(konflik_wh2_k009.sum()) != 1:
+        raise ValueError(
+            "K-009: pengecualian sementara untuk NUTRITION_WH_2 2008 "
+            "SEX=MALE; AGE=MONTHS24-35 nilai 15.7 harus menemukan tepat satu baris."
+        )
+    df = df.loc[~konflik_wh2_k009].reset_index(drop=True)
+
+    kembar = df[df.duplicated(KUNCI, keep=False)]
+    if not kembar.empty:
+        contoh = kembar[KUNCI].drop_duplicates().to_dict("records")[:5]
+        raise ValueError(f"Kunci Silver kembar: {contoh}")
+
     # Validasi skema
     salah = periksa_silver(df, manifest)
     if salah:
