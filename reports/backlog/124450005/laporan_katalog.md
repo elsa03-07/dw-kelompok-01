@@ -65,6 +65,7 @@ python reports/backlog/124450005/verifikasi_katalog.py
 ```
 
 Skrip hanya memakai pustaka standar Python, membaca `data/raw/`, dan akan gagal bila:
+
 - ada seri yang hilang/duplikat atau satuan/kode SDG kosong;
 - satuan atau kode SDG tidak sama dengan hasil pemeriksaan metadata;
 - nilai berada di luar 0–100;
