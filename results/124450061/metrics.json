@@ -1,5 +1,7 @@
 {
   "metrik": {
+    "aturan_validasi": 12,
+    "aturan_lolos": 12,
     "baris_silver": 1439,
     "sel_kosong_grid": 28,
     "outlier_ditandai": 45,
