@@ -1,0 +1,12 @@
+{
+  "metrik": {
+    "baris_silver_diperiksa": 1439,
+    "seri_pembanding_diperiksa": 5,
+    "irisan_tahun_tersedia": 9,
+    "selisih_metode_terpetakan": 2,
+    "rekomendasi_sebanding": 1
+  },
+  "seed": 0,
+  "data_hash": "16975e3f357e3355c9802a5bb55e462fac15810c27fd856ef7ef049af4873db9",
+  "perangkat": "Windows AMD64 Python 3.15.2"
+}
