@@ -1,4 +1,4 @@
-# Data dictionary — <Nama tim>
+# Data dictionary — Kelompok 1 (Kerawanan Pangan Provinsi)
 
 Satu tabel per keluaran (Silver dan setiap tabel Gold). Isi dari data nyata, bukan dari ingatan:
 tipe, satuan, rentang, dan jumlah kosong dihitung ulang setiap kali pipeline berjalan.
@@ -22,6 +22,8 @@ field mentah yang menjadi sumber bukti tercatat di
 Tidak ada seri dengan periode semesteran atau bulanan; Silver tidak merata-ratakan periode
 non-tahunan menjadi tahunan.
 
+---
+
 ## data/silver/silver.parquet
 
 Tabel Silver menyimpan observasi tervalidasi dari seluruh sumber data dengan skema minimal 11 kolom wajib. Total baris: 1.439, mencakup 7 seri indikator dan 39 entitas wilayah (38 provinsi + 1 nasional).
@@ -42,5 +44,4 @@ Tabel Silver menyimpan observasi tervalidasi dari seluruh sumber data dengan ske
 
 ## data/gold/<tabel>.parquet
 
-| Kolom | Tipe | Satuan/format | Boleh kosong | Rentang atau nilai sah | Asal (berkas/aturan) | Keterangan |
-|---|---|---|---|---|---|---|
+*(Bagian ini akan ditambahkan pada Sprint 2 dan Sprint 3 setelah transformasi panel Gold dan tabel rekonsiliasi dibentuk).*
