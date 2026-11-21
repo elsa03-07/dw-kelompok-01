@@ -5,6 +5,10 @@ rekonsiliasi dengan pembanding nasional) dan basis data SQL (mis. data/gold/gold
 """
 
 
-def jalankan(silver):
-    """Terima Silver, tulis tabel Gold, kembalikan {nama_tabel: DataFrame}."""
-    raise NotImplementedError("Tahap 4–6: grid lengkap, reshape panel, rekonsiliasi pembanding, simpan ke SQL")
+def jalankan(silver=None):
+    """Terima Silver, tulis tabel Gold, kembalikan {nama_tabel: DataFrame}.
+    
+    Tahap 4–6 Gold sedang dipersiapkan untuk pengerjaan Sprint 2.
+    Mengembalikan dict kosong sementara agar pipeline dapat melanjutkan ke tahap validasi Silver.
+    """
+    return {}
