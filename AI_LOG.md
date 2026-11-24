@@ -1,4 +1,4 @@
-# AI_LOG — <Nama tim>
+# AI_LOG — <Kelompok 1>
 
 Satu baris per pemakaian AI yang bermakna (ChatGPT, Claude, Copilot, Bravais, dan sejenisnya).
 Ringkas dan jujur; transkrip penuh tidak diminta. Yang dinilai bukan "pakai AI atau tidak",
@@ -13,3 +13,4 @@ melainkan "mengerti atau tidak" — isi kolom terakhir dengan apa yang Anda ubah
 | 2026-11-21 | 124450061 | Antigravity AI | Penyusunan skema SQL Silver (DDL & loader), implementasi 12 aturan validasi Pandera di pipeline, dan dokumentasi kamus data | Merancang DDL primary key komposit 6 dimensi, mengintegrasikan validasi ke pipeline.py, dan menyusun penelusuran lineage baris riil |
 | 2026-11-21 | 124450088 | Antigravity AI | Perumusan Sprint Goal, pemutakhiran data dictionary 11 kolom Silver, penyusunan enam bagian laporan tim reports/tim.md, dan sinkronisasi metrik | Mengintegrasikan seluruh aturan keputusan K-001 s.d. K-010 ke kamus data, menyusun rekapitulasi numerik terverifikasi dan pembagian kerja pada laporan tim, serta menyelaraskan dengan skema starter |
 | 2026-11-21 | 124450032 | Antigravity AI | Penyusunan metrik hasil reproduksi pipeline dan draf laporan Sprint 1 komponen reproduksi & demo (didukung Koordinator) | Menyesuaikan metrik hash MANIFEST.csv 14 berkas, mencatat durasi eksekusi riil 0.3 detik pada lingkungan lokal, dan mendokumentasikan kendala sakit sesuai Kontrak Tim |
+| 2026-11-24 | 124450061 | Antigravity AI | Perancangan aturan satu nilai per sel Gold (src/gold/aturan_pilih.py), penyaringan rincian sebanding, dan pembentukan panel Gold | Menyusun logika pemilihan snapshot terbaru, menyaring 697 baris sub-rincian WHO ke Silver, mempertahankan penanda anomali Sprint 1, dan mencatat keputusan K-011 |
