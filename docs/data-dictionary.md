@@ -42,6 +42,37 @@ Tabel Silver menyimpan observasi tervalidasi dari seluruh sumber data dengan ske
 | _berkas_raw | string | jalur relatif | tidak | jalur di bawah data/raw/ | fungsi ekstraksi | Jalur berkas mentah asal untuk audit lineage |
 | _sha256_raw | string | 64-karakter hex | tidak | sha256 valid di MANIFEST.csv | src.common.manifest | Sidik hash integritas berkas mentah sumber |
 
-## data/gold/<tabel>.parquet
+## data/gold/panel_provinsi.parquet
 
-*(Bagian ini akan ditambahkan pada Sprint 2 dan Sprint 3 setelah transformasi panel Gold dan tabel rekonsiliasi dibentuk).*
+Tabel panel Gold tingkat provinsi (format wide) yang menyandingkan kedua seri utama BPS per provinsi per tahun, dilengkapi penanda diagnostik anomali dan patahan seri Sprint 1. Dimensi: 314 baris × 9 kolom.
+
+| Kolom | Tipe Data | Satuan/Format | Boleh Kosong? | Rentang atau Nilai Sah | Asal (Berkas/Keputusan Log) | Keterangan & Definisi |
+|---|:---:|:---:|:---:|---|---|---|
+| `wilayah_kode` | int | 4-digit numerik | Tidak | 1100 s.d. 9700 (38 Provinsi BPS) | Keputusan K-001 | Kode provinsi BPS (kode 2-digit × 100). |
+| `nama_wilayah` | string | Teks Huruf Kapital | Tidak | Nama resmi 38 provinsi | Keputusan K-001 | Nama baku provinsi di Indonesia. |
+| `periode` | string | YYYY (regex `^\d{4}$`) | Tidak | 2017 s.d. 2025 | Keputusan K-008 | Tahun kalender pengamatan SUSENAS. |
+| `var1473` | float | Persentase | Tidak | 1.43 s.d. 38.35 | `data/silver/silver.parquet` (bps, var1473) | Prevalensi Ketidakcukupan Konsumsi Pangan (PoU). |
+| `var1474` | float | Persentase | Tidak | 0.38 s.d. 35.67 | `data/silver/silver.parquet` (bps, var1474) | Prevalensi Kerawanan Pangan Sedang atau Berat (FIES). |
+| `status_anomali_var1473` | string | Teks kategori | Tidak | `NORMAL`, `OUTLIER_ASLI`, `PATAHAN_SERI` | Keputusan K-002 & `daftar_anomali_terklasifikasi.csv` | Klasifikasi anomali indikator PoU. |
+| `status_anomali_var1474` | string | Teks kategori | Tidak | `NORMAL`, `OUTLIER_ASLI`, `PATAHAN_SERI` | Keputusan K-002 & `daftar_anomali_terklasifikasi.csv` | Klasifikasi anomali indikator FIES. |
+| `is_outlier` | bool | Boolean | Tidak | `True`, `False` | Keputusan K-002 & K-011 | True jika observasi merupakan outlier geografis asli (Maluku/Papua). |
+| `is_patahan` | bool | Boolean | Tidak | `True`, `False` | Keputusan K-002 & K-011 | True jika observasi merupakan patahan struktural (pemekaran DOB 2024-2025). |
+
+---
+
+## data/gold/rekonsiliasi_nasional.parquet
+
+Tabel Gold tingkat nasional yang menyandingkan angka agregat BPS dengan pembanding internasional WDI dan WHO GHO per tahun untuk evaluasi selisih metodologi. Dimensi: 27 baris × 10 kolom.
+
+| Kolom | Tipe Data | Satuan/Format | Boleh Kosong? | Rentang atau Nilai Sah | Asal (Berkas/Keputusan Log) | Keterangan & Definisi |
+|---|:---:|:---:|:---:|---|---|---|
+| `periode` | string | YYYY | Tidak | 1996 s.d. 2025 | Keputusan K-008 | Tahun pengamatan indikator nasional. |
+| `wilayah_kode` | int | 9999 | Tidak | 9999 | Keputusan K-001 | Kode agregat nasional Indonesia. |
+| `nama_wilayah` | string | INDONESIA | Tidak | `INDONESIA` | Keputusan K-001 | Entitas nasional Indonesia. |
+| `bps_var1473` | float | Persentase | Ya (hanya 2017-2025) | 7.63 s.d. 10.21 | BPS SUSENAS var1473 | Prevalensi PoU nasional menurut BPS. |
+| `bps_var1474` | float | Persentase | Ya (hanya 2017-2025) | 4.00 s.d. 8.66 | BPS SUSENAS var1474 | Prevalensi FIES nasional menurut BPS. |
+| `wdi_SN.ITK.DEFC.ZS` | float | Persentase | Ya (2001-2024) | 5.20 s.d. 19.30 | World Bank / FAO | Prevalensi PoU pembanding dari WDI. |
+| `wdi_SN.ITK.MSFI.ZS` | float | Persentase | Ya (2015-2024) | 4.30 s.d. 9.10 | World Bank / FAO | Prevalensi FIES pembanding dari WDI. |
+| `who_NUTSTUNTINGPREV` | float | Persentase | Ya (2000-2024) | 21.50 s.d. 42.40 | WHO GHO (SEX=TOTAL) | Prevalensi Stunting balita nasional (agregat total). |
+| `who_NUTOVERWEIGHTPREV` | float | Persentase | Ya (2000-2024) | 2.80 s.d. 11.50 | WHO GHO (SEX=TOTAL) | Prevalensi Overweight balita nasional (agregat total). |
+| `who_NUTRITION_WH_2` | float | Persentase | Ya (1996-2023) | 7.10 s.d. 15.70 | WHO GHO (TOTAL) | Prevalensi Wasting balita nasional (agregat total). |
