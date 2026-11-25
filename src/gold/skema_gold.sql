@@ -31,3 +31,4 @@ CREATE TABLE IF NOT EXISTS rekonsiliasi_nasional (
     var1474_agregat REAL,
     selisih_var1474 REAL
 );
+
