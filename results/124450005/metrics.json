@@ -1,8 +1,23 @@
 {
-  "metrik": {
-    "berkas_dibaca": 14
+  "verifikasi_katalog": {
+    "berkas_dibaca": 14,
+    "seri_diperiksa": 7,
+    "satuan_terverifikasi": 7,
+    "kode_sdg_terverifikasi": 7,
+    "koreksi_satuan": 2,
+    "koreksi_kode_sdg": 2,
+    "periode_non_tahunan": 0,
+    "nilai_di_luar_0_100": 0,
+    "keputusan_dicatat": 3,
+    "seed": 0,
+    "data_hash": "16975e3f357e3355c9802a5bb55e462fac15810c27fd856ef7ef049af4873db9",
+    "perangkat": "Linux x86_64 Python 3.14.4",
+    "durasi_detik": 0.59
   },
-  "seed": 0,
-  "data_hash": "16975e3f357e3355c9802a5bb55e462fac15810c27fd856ef7ef049af4873db9",
-  "perangkat": "Windows AMD64 Python 3.13.7"
+  "silver": {
+    "seri_silver": 7,
+    "rincian_dienkode": 73,
+    "baris_silver": 1439,
+    "perangkat": "Windows AMD64 Python 3.13.7"
+  }
 }

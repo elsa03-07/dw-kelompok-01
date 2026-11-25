@@ -23,7 +23,13 @@ def main():
                           ("gold", lambda h: gold.jalankan(h["silver"])),
                           ("validasi", lambda h: validasi.jalankan(h["silver"], h["gold"]))]:
         mulai = time.time()
-        hasil[nama] = langkah(hasil)
+        try:
+            hasil[nama] = langkah(hasil)
+        except NotImplementedError:
+            if nama not in {"gold", "validasi"}:
+                raise
+            print(f"{nama:<10} belum tersedia; Silver selesai, Gold/Validasi tertunda.")
+            break
         print(f"{nama:<10} selesai dalam {time.time() - mulai:.1f} s")
     print("Periksa skema minimal: python -m src.common.skema data/silver/silver.parquet")
 
