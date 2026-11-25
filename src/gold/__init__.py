@@ -1,48 +1,52 @@
-"""Tahap 4–6 — Reshape, integrasi, dan penyimpanan ke Gold (pertemuan VII, IX, XI, XII). Milik tim.
 
-Keluaran: data/gold/*.parquet (panel provinsi x tahun x indikator siap analisis, plus tabel
-rekonsiliasi dengan pembanding nasional) dan basis data SQL (mis. data/gold/gold.sqlite).
-"""
+"""Pembentukan Gold utama dan keluaran analisis anomali."""
+
 from pathlib import Path
-import sys
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import pandas as pd
-from src.gold.aturan_pilih import proses_gold
-GOLD_DIR = ROOT / "data" / "gold"
-PANEL_PROV_FILE = GOLD_DIR / "panel_provinsi.parquet"
-REKON_NAS_FILE = GOLD_DIR / "rekonsiliasi_nasional.parquet"
 
+from src.gold.builder import SILVER_FILE, bangun_gold
+from src.gold.aturan_pilih import proses_gold
+
+ROOT = Path(__file__).resolve().parents[2]
+GOLD_DIR = ROOT / "data" / "gold"
 
 def jalankan(silver=None):
-    """Terima Silver, tulis tabel Gold, kembalikan {nama_tabel: DataFrame}."""
-    GOLD_DIR.mkdir(parents=True, exist_ok=True)
-    
+    """Membangun Gold kanonis Sprint 2."""
     if silver is None:
-        silver_file = ROOT / "data" / "silver" / "silver.parquet"
-        if not silver_file.exists():
-            raise FileNotFoundError(f"Berkas Silver Parquet tidak ditemukan di: {silver_file}")
-        silver = pd.read_parquet(silver_file)
-        
+        silver = pd.read_parquet(SILVER_FILE)
+
+    tabel = bangun_gold(silver)
+    GOLD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for nama, df in tabel.items():
+        tujuan = GOLD_DIR / f"{nama}.parquet"
+        df.to_parquet(tujuan, index=False)
+        print(f"{tujuan.relative_to(ROOT)} berhasil dibuat: {len(df):,} baris.")
+
+    print("Gold selesai: panel provinsi dan tabel nasional tervalidasi.")
+    return tabel
+
+def jalankan_analisis_anomali(silver=None):
+    """Menjalankan keluaran analisis anomali tanpa menimpa Gold kanonis."""
+    if silver is None:
+        silver = pd.read_parquet(SILVER_FILE)
+
     hasil = proses_gold(silver)
-    df_panel = hasil["panel_provinsi"]
-    df_rekon = hasil["rekonsiliasi_nasional"]
-    
-    df_panel.to_parquet(PANEL_PROV_FILE, index=False)
-    df_rekon.to_parquet(REKON_NAS_FILE, index=False)
-    
-    print(f"data/gold/panel_provinsi.parquet berhasil dibuat: {len(df_panel):,} baris ({len(df_panel.columns)} kolom).")
-    print(f"data/gold/rekonsiliasi_nasional.parquet berhasil dibuat: {len(df_rekon):,} baris ({len(df_rekon.columns)} kolom).")
-    print(f"Jumlah baris Silver yang tidak terpilih (sub-rincian tetap di Silver): {hasil['baris_tidak_terpilih']:,} baris.")
-    
-    return {
-        "panel_provinsi": df_panel,
-        "rekonsiliasi_nasional": df_rekon
+    GOLD_DIR.mkdir(parents=True, exist_ok=True)
+
+    keluaran = {
+        "panel_provinsi_anomali": hasil["panel_provinsi"],
+        "rekonsiliasi_nasional": hasil["rekonsiliasi_nasional"],
     }
 
+    for nama, df in keluaran.items():
+        tujuan = GOLD_DIR / f"{nama}.parquet"
+        df.to_parquet(tujuan, index=False)
+        print(f"{tujuan.relative_to(ROOT)} berhasil dibuat: {len(df):,} baris.")
+
+    print("Analisis anomali Gold selesai.")
+    return keluaran
 
 if __name__ == "__main__":
     jalankan()
