@@ -1,0 +1,16 @@
+{
+  "metrik": {
+    "baris_gold_panel": 314,
+    "baris_gold_rekonsiliasi": 27,
+    "baris_silver_tidak_terpilih": 697,
+    "baris_silver": 1439,
+    "aturan_validasi": 12,
+    "aturan_lolos": 12,
+    "outlier_ditandai": 45,
+    "patahan_seri": 16,
+    "keputusan_dicatat": 6
+  },
+  "seed": 0,
+  "data_hash": "16975e3f357e3355c9802a5bb55e462fac15810c27fd856ef7ef049af4873db9",
+  "perangkat": "Windows AMD64 Python 3.15.2"
+}

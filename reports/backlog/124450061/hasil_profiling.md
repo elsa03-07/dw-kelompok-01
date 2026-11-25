@@ -93,3 +93,5 @@ Perubahan jumlah provinsi dari 34 menjadi 38 mulai terlihat pada tahun 2024. Hal
 Data WHO dan WDI memerlukan pemeriksaan lanjutan karena memiliki nilai kosong dan struktur data yang lebih kompleks.
 
 Laporan ini menjadi dasar untuk proses pembersihan, transformasi, dan penyusunan data Silver pada tahap berikutnya.
+
+......
