@@ -367,7 +367,7 @@ def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
 |:---:|---|:---:|:---:|---|
 """
     for idx, (nama, status, catatan) in enumerate(hasil_aturan, 1):
-        status_str = "✅ **LOLOS**" if status else "❌ **GAGAL**"
+        status_str = "**LOLOS**" if status else "**GAGAL**"
         lingkup = "Silver" if idx <= 12 else "Gold & Rekon"
         md_content += f"| {idx} | {nama} | {lingkup} | {status_str} | {catatan} |\n"
         
