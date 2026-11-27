@@ -28,5 +28,5 @@
 ---
 
 ## Keterangan Pengujian Lapis Gold
-- **Status Gold:** Tersedia (3 tabel)
+- **Status Gold:** Tersedia (5 tabel)
 - Rincian pembanding nasional WHO yang sebanding (DIM_SEX=TOTAL, DIM_AGE=TOTAL) telah diverifikasi tersedia di layer Silver sesuai aturan keputusan **K-004**.
