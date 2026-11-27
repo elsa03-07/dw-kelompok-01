@@ -2,13 +2,11 @@
   "metrik": {
     "aturan_validasi": 11,
     "aturan_lolos": 11,
-    "kolom_terdokumentasi": 11,
+    "kolom_terdokumentasi": 62,
     "baris_silver_tervalidasi": 1439,
     "keputusan_dicatat": 10
   },
   "seed": 0,
   "data_hash": "16975e3f357e3355c9802a5bb55e462fac15810c27fd856ef7ef049af4873db9",
-  "perangkat": "Windows AMD64 Python 3.13.15",
-  "pasangan_rekonsiliasi": 114,
-  "selisih_median": 2.0692647058823526
+  "perangkat": "Windows AMD64 Python 3.13.15"
 }
