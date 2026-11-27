@@ -119,27 +119,13 @@ def bangun_panel(silver):
         & (silver["wilayah_kode"] != 9999)
         & (silver["rincian"] == "Total")
     ].copy()
-    panel = _tambah_meta(panel)
-    # add normalized column (placeholder, actual conversion can be added later)
-    panel["nilai_normal"] = panel["nilai"]
-    # deduplicate on key columns (seri_kode, wilayah_kode, periode)
-    if panel.duplicated(KUNCI_PANEL, keep=False).any():
-        # aggregate duplicated rows: mean for nilai, first for other columns
-        agg_dict = {col: "first" for col in KOLOM_PANEL}
-        agg_dict["nilai"] = "mean"
-        agg_dict["nilai_normal"] = "first"
-        panel = panel.groupby(KUNCI_PANEL, as_index=False).agg(agg_dict)
-    # ensure column order matches KOLOM_PANEL plus the new normalized column
-    panel = panel[KOLOM_PANEL + ["nilai_normal"]].sort_values(
-        ["seri_kode", "wilayah_kode", "periode"]
-    ).reset_index(drop=True)
-    return panel
-    panel = silver[
-        (silver["sumber"] == "bps")
-        & (silver["seri_kode"].isin(PANEL_SERI))
-        & (silver["wilayah_kode"] != 9999)
-        & (silver["rincian"] == "Total")
-    ].copy()
+    # Aturan satu nilai per sel: kunci ganda adalah kesalahan, bukan untuk dirata-rata (K-014).
+    ganda = panel.duplicated(KUNCI_PANEL, keep=False)
+    if ganda.any():
+        raise ValueError(
+            f"panel_provinsi: {int(ganda.sum())} baris berkunci ganda (seri, wilayah, periode); "
+            "selesaikan di aturan pemilihan, jangan dirata-rata"
+        )
     panel = _tambah_meta(panel)
     panel = panel[KOLOM_PANEL].sort_values(
         ["seri_kode", "wilayah_kode", "periode"]
@@ -318,59 +304,3 @@ def bangun_gold(silver):
         "tabel_nasional": nasional,
         "tabel_nasional_lebar": lebar,
     }
-
-# ---------------------------------------------------------------------------
-# Rekonsiliasi antara data nasional (Gold) dan data provinsi (Silver)
-# ---------------------------------------------------------------------------
-import pandas as pd
-
-def rekonsiliasi_golongan(df_panel: pd.DataFrame, df_nasional: pd.DataFrame) -> pd.DataFrame:
-    """Membuat tabel rekonsiliasi.
-
-    Kolom yang dihasilkan:
-    - periode
-    - seri_kode
-    - nilai_utama   (nilai BPS dari panel provinsi, rata‑rata provinsi)
-    - nilai_pembanding (nilai WDI/WHO dari tabel nasional)
-    - selisih = nilai_utama - nilai_pembanding
-    - kategori: satu dari
-        * "definisi berbeda"
-        * "metode berbeda"
-        * "vintage berbeda"
-        * "cakupan berbeda"
-        * "belum terjelaskan"
-    """
-    # 1. Hitung nilai utama per periode & seri dari panel (rata‑rata provinsi)
-    panel_nasional = (
-        df_panel.groupby(["periode", "seri_kode"])["nilai"]
-        .mean()
-        .reset_index()
-        .rename(columns={"nilai": "nilai_utama"})
-    )
-    # 2. Ambil nilai pembanding dari tabel nasional (Gold)
-    nasional_subset = (
-        df_nasional[["periode", "seri_kode", "nilai"]]
-        .rename(columns={"nilai": "nilai_pembanding"})
-    )
-    # 3. Gabungkan kedua tabel
-    merged = pd.merge(
-        panel_nasional,
-        nasional_subset,
-        on=["periode", "seri_kode"],
-        how="outer",
-        indicator=True,
-    )
-    # 4. Hitung selisih (NaN apabila salah satu nilai tidak ada)
-    merged["selisih"] = merged["nilai_utama"] - merged["nilai_pembanding"]
-    # 5. Tentukan kategori
-    def tentukan_kategori(row):
-        if pd.isna(row["nilai_utama"]) or pd.isna(row["nilai_pembanding"]):
-            return "belum terjelaskan"
-        if row["seri_kode"] == "var1473":
-            return "definisi berbeda"
-        if row["seri_kode"] == "var1474":
-            return "metode berbeda"
-        return "definisi berbeda"
-    merged["kategori"] = merged.apply(tentukan_kategori, axis=1)
-    result = merged[["periode", "seri_kode", "nilai_utama", "nilai_pembanding", "selisih", "kategori"]]
-    return result

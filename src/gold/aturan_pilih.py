@@ -1,175 +1,136 @@
-"""Modul Aturan Pemilihan Satu Nilai per Sel Gold (Tahap 4 - Persiapan Gold).
-Milik tim — Penanggung jawab: 124450061 (Backlog #20).
+"""Aturan pemilihan satu nilai per sel Gold (Tahap 4, Backlog #20). Penanggung jawab: 124450061.
 
-Aturan pemilihan:
-1. Snapshot terbaru (keep='last') bila terdapat revisi data.
-2. Penyaringan rincian:
-   - BPS: rincian == 'Total'
-   - WDI: rincian == 'Total'
-   - WHO GHO: hanya rincian agregat total yang sebanding (SEX=TOTAL atau TOTAL).
-   Rincian subkelompok usia/gender tetap berada hanya di Silver.
-3. Periode: wajib tahunan ('tahun'), tidak melakukan agregasi non-tahunan.
-4. Flag anomali: mempertahankan penanda outlier dan patahan seri dari Sprint 1.
+Dipanggil dari pipeline:  pipeline.py -> src.gold.jalankan() -> pilih_baris_gold()
+
+Aturan diterapkan berurutan pada Silver; dampak tiap aturan dihitung dari baris yang benar-benar
+disisihkan oleh aturan itu sendiri, lalu ditulis otomatis ke kolom dampak_baris di
+log-keputusan.csv (tidak diketik manual):
+
+    K-014  Snapshot terbaru: bila sel (sumber, seri, wilayah, periode, rincian) muncul di lebih dari
+           satu snapshot, pakai snapshot dengan tanggal folder terbaru.
+    K-016  Periode tahunan: hanya jenis_periode == 'tahun'; tidak ada agregasi buatan.
+    K-015  Rincian sebanding: BPS/WDI 'Total'; WHO memakai rincian total yang sama dengan
+           src.gold.builder.RINCIAN_WHO. Subkelompok WHO tetap hanya di Silver.
+    K-017  Penanda anomali: outlier dan patahan seri ditandai di panel Gold, tidak ada baris dibuang.
+
+Hasil pemilihan dicocokkan dengan tabel Gold kanonis dari builder.py; bila berbeda, pipeline gagal.
 """
+import re
 from pathlib import Path
+
 import pandas as pd
-import numpy as np
+
+from src.gold.builder import PANEL_SERI, RINCIAN_WHO, SERI_META
 
 ROOT = Path(__file__).resolve().parents[2]
 ANOMALI_FILE = ROOT / "reports" / "backlog" / "124450061" / "daftar_anomali_terklasifikasi.csv"
+LOG_KEPUTUSAN = ROOT / "log-keputusan.csv"
 
-def muat_peta_anomali():
-    """Memuat daftar anomali terklasifikasi dari Sprint 1."""
-    if not ANOMALI_FILE.exists():
-        return {}
-    df_anom = pd.read_csv(ANOMALI_FILE)
-    peta = {}
-    for _, r in df_anom.iterrows():
-        kunci = (str(r['seri_kode']), int(r['wilayah_id']), str(int(r['tahun'])))
-        peta[kunci] = {
-            'kategori': str(r['kategori_anomali']),
-            'is_outlier': 'Outlier' in str(r['kategori_anomali']),
-            'is_patahan': 'Patahan' in str(r['kategori_anomali'])
-        }
-    return peta
+KUNCI_SEL = ["sumber", "seri_kode", "wilayah_kode", "periode", "rincian"]
+DOB_PAPUA = {9200, 9500, 9600, 9700}
+TAHUN_PEMEKARAN = 2024
+POLA_TANGGAL = re.compile(r"(\d{4}-\d{2}-\d{2})")
+POLA_DAMPAK = re.compile(r",(\d+)$")
 
-def pilih_baris_gold(silver_df):
-    """
-    Menjalankan aturan pemilihan satu nilai per sel dari Silver.
-    Mengembalikan: (df_provinsi_terpilih, df_nasional_terpilih, info_dampak)
-    """
-    total_silver = len(silver_df)
-    
-    # 1. Aturan Deduplikasi Snapshot (K-011): Kunci 6 dimensi, keep='last'
-    KUNCI_6 = ["sumber", "seri_kode", "wilayah_kode", "periode", "rincian", "_berkas_raw"]
-    df_snapshot = silver_df.drop_duplicates(subset=KUNCI_6, keep='last').copy()
-    dampak_snapshot = total_silver - len(df_snapshot)
-    
-    # 2. Aturan Integritas Periode (K-013): Wajib tahunan murni
-    df_periode = df_snapshot[df_snapshot['jenis_periode'] == 'tahun'].copy()
-    dampak_periode = len(df_snapshot) - len(df_periode)
-    
-    # 3. Aturan Rincian Sebanding (K-012):
-    # - BPS Provinsi: rincian == 'Total' & bukan 9999
-    bps_prov = df_periode[(df_periode['sumber'] == 'bps') & (df_periode['wilayah_kode'] != 9999) & (df_periode['rincian'] == 'Total')].copy()
-    
-    # - Pembanding Nasional sebanding:
-    kondisi_bps_nasional = (df_periode['sumber'] == 'bps') & (df_periode['wilayah_kode'] == 9999) & (df_periode['rincian'] == 'Total')
-    kondisi_wdi = (df_periode['sumber'] == 'wdi') & (df_periode['rincian'] == 'Total')
-    kondisi_who_stunt = (df_periode['seri_kode'] == 'NUTSTUNTINGPREV') & (df_periode['rincian'] == 'SEX=TOTAL')
-    kondisi_who_ow = (df_periode['seri_kode'] == 'NUTOVERWEIGHTPREV') & (df_periode['rincian'] == 'SEX=TOTAL')
-    kondisi_who_wh2 = (df_periode['seri_kode'] == 'NUTRITION_WH_2') & (df_periode['rincian'] == 'TOTAL')
-    
-    nasional_terpilih = df_periode[
-        kondisi_bps_nasional | kondisi_wdi | kondisi_who_stunt | kondisi_who_ow | kondisi_who_wh2
-    ].copy()
-    
-    baris_terpilih_total = len(bps_prov) + len(nasional_terpilih)
-    dampak_rincian = total_silver - baris_terpilih_total
-    
-    # 4. Aturan Penanda Anomali (K-014):
-    # Penanda patahan dan outlier dipertahankan tanpa membuang baris
-    dampak_anomali = 0
-    
-    info_dampak = {
-        "K-014": {
-            "nama": "Multi-Snapshot Terbaru (keep='last')",
-            "dampak_baris": int(dampak_snapshot)
-        },
-        "K-015": {
-            "nama": "Rincian Sebanding WHO vs BPS/WDI",
-            "dampak_baris": int(dampak_rincian)
-        },
-        "K-016": {
-            "nama": "Integritas Periode Tahunan",
-            "dampak_baris": int(dampak_periode)
-        },
-        "K-017": {
-            "nama": "Penanda Outlier & Patahan Seri",
-            "dampak_baris": int(dampak_anomali)
-        },
-        "total_tidak_terpilih": int(dampak_rincian)
+
+def _tanggal_snapshot(berkas):
+    cocok = POLA_TANGGAL.search(str(berkas))
+    return cocok.group(1) if cocok else ""
+
+
+def _rincian_sebanding(df):
+    rincian_wajib = df["seri_kode"].map(RINCIAN_WHO).fillna("Total")
+    return df["rincian"] == rincian_wajib
+
+
+def pilih_baris_gold(silver):
+    """Terapkan K-014, K-016, K-015 berurutan. Kembalikan (provinsi, nasional, info_dampak)."""
+    awal = len(silver)
+
+    # K-014: snapshot terbaru per sel
+    df = silver.assign(_snapshot=silver["_berkas_raw"].map(_tanggal_snapshot))
+    df = df.sort_values(KUNCI_SEL + ["_snapshot"]).drop_duplicates(KUNCI_SEL, keep="last")
+    dampak_snapshot = awal - len(df)
+
+    # K-016: periode tahunan murni
+    sebelum = len(df)
+    df = df[df["jenis_periode"] == "tahun"]
+    dampak_periode = sebelum - len(df)
+
+    # K-015: rincian sebanding (hanya seri kasus)
+    sebelum = len(df)
+    df = df[df["seri_kode"].isin(SERI_META) & _rincian_sebanding(df)]
+    dampak_rincian = sebelum - len(df)
+
+    df = df.drop(columns="_snapshot")
+    provinsi = df[(df["sumber"] == "bps") & df["seri_kode"].isin(PANEL_SERI) & (df["wilayah_kode"] != 9999)]
+    nasional = df[df["wilayah_kode"] == 9999]
+
+    info = {
+        "K-014": {"nama": "Snapshot terbaru per sel", "dampak_baris": int(dampak_snapshot)},
+        "K-016": {"nama": "Periode tahunan murni", "dampak_baris": int(dampak_periode)},
+        "K-015": {"nama": "Rincian sebanding (subkelompok WHO tetap di Silver)", "dampak_baris": int(dampak_rincian)},
+        "K-017": {"nama": "Penanda outlier dan patahan (tanpa membuang baris)", "dampak_baris": 0},
+        "baris_silver": int(awal),
+        "baris_terpilih": int(len(provinsi) + len(nasional)),
     }
-    
-    return bps_prov, nasional_terpilih, info_dampak
+    info["baris_tidak_terpilih"] = info["baris_silver"] - info["baris_terpilih"]
+    return provinsi, nasional, info
 
-def bangun_panel_provinsi(bps_prov_df):
-    """
-    Membentuk panel Gold provinsi x tahun x indikator dalam bentuk wide table,
-    lengkap dengan penanda outlier dan patahan seri dari Sprint 1.
-    """
-    peta_anomali = muat_peta_anomali()
-    
-    # Pivot nilai indikator
-    pivot = bps_prov_df.pivot(
-        index=['wilayah_kode', 'nama_wilayah', 'periode'],
-        columns='seri_kode',
-        values='nilai'
-    ).reset_index()
-    
-    # Tambahkan atribut penanda anomali
-    status_1473, status_1474 = [], []
-    is_outlier, is_patahan = [], []
-    
-    for _, r in pivot.iterrows():
-        w_kode = int(r['wilayah_kode'])
-        thn = str(r['periode'])
-        
-        anom_1473 = peta_anomali.get(('var1473', w_kode, thn), {'kategori': 'NORMAL', 'is_outlier': False, 'is_patahan': False})
-        anom_1474 = peta_anomali.get(('var1474', w_kode, thn), {'kategori': 'NORMAL', 'is_outlier': False, 'is_patahan': False})
-        
-        status_1473.append(anom_1473['kategori'])
-        status_1474.append(anom_1474['kategori'])
-        
-        outl = anom_1473['is_outlier'] or anom_1474['is_outlier']
-        patah = anom_1473['is_patahan'] or anom_1474['is_patahan']
-        
-        # Patahan pemekaran DOB Papua 2024-2025
-        if w_kode in [9200, 9500, 9600, 9700] and int(thn) >= 2024:
-            patah = True
-            
-        is_outlier.append(outl)
-        is_patahan.append(patah)
-        
-    pivot['status_anomali_var1473'] = status_1473
-    pivot['status_anomali_var1474'] = status_1474
-    pivot['is_outlier'] = is_outlier
-    pivot['is_patahan'] = is_patahan
-    
-    pivot = pivot.sort_values(['wilayah_kode', 'periode']).reset_index(drop=True)
-    return pivot
 
-def bangun_rekonsiliasi_nasional(nasional_df):
-    """
-    Membentuk tabel nasional yang menyandingkan BPS, WDI, dan WHO per tahun.
-    """
-    df = nasional_df.copy()
-    # Beri nama kolom indikator yang jelas: <sumber>_<seri>
-    df['kolom_indikator'] = df['sumber'] + '_' + df['seri_kode']
-    
-    pivot = df.pivot(
-        index='periode',
-        columns='kolom_indikator',
-        values='nilai'
-    ).reset_index()
-    
-    pivot['wilayah_kode'] = 9999
-    pivot['nama_wilayah'] = 'INDONESIA'
-    
-    cols_order = ['periode', 'wilayah_kode', 'nama_wilayah'] + [c for c in pivot.columns if c not in ['periode', 'wilayah_kode', 'nama_wilayah']]
-    pivot = pivot[cols_order].sort_values('periode').reset_index(drop=True)
-    return pivot
+def cocokkan_dengan_gold(provinsi, nasional, panel, tabel_nasional):
+    """Pastikan aturan #20 dan builder kanonis memilih sel yang sama persis."""
+    for nama, pilihan, gold, kunci in [
+        ("panel_provinsi", provinsi, panel, ["seri_kode", "wilayah_kode", "periode"]),
+        ("tabel_nasional", nasional, tabel_nasional, ["sumber", "seri_kode", "periode"]),
+    ]:
+        a = set(map(tuple, pilihan[kunci].astype(str).to_numpy()))
+        b = set(map(tuple, gold[kunci].astype(str).to_numpy()))
+        if a != b:
+            raise ValueError(
+                f"{nama}: aturan pemilihan (#20) dan Gold kanonis berbeda "
+                f"({len(a - b)} hanya di aturan, {len(b - a)} hanya di Gold)"
+            )
 
-def proses_gold(silver_df):
-    """Fungsi orkestrasi pembentukan seluruh tabel Gold."""
-    bps_prov, nasional_terpilih, info_dampak = pilih_baris_gold(silver_df)
-    
-    panel_prov = bangun_panel_provinsi(bps_prov)
-    rekon_nas = bangun_rekonsiliasi_nasional(nasional_terpilih)
-    
+
+def muat_peta_anomali(path=ANOMALI_FILE):
+    """{(seri, wilayah, tahun): kategori} dari klasifikasi anomali Sprint 1 (K-002)."""
+    if not Path(path).exists():
+        raise FileNotFoundError(f"Daftar anomali Sprint 1 tidak ditemukan: {path}")
+    df = pd.read_csv(path)
     return {
-        'panel_provinsi': panel_prov,
-        'rekonsiliasi_nasional': rekon_nas,
-        'info_dampak': info_dampak,
-        'baris_tidak_terpilih': info_dampak['total_tidak_terpilih']
+        (str(r.seri_kode), int(r.wilayah_id), str(int(r.tahun))): str(r.kategori_anomali)
+        for r in df.itertuples(index=False)
     }
+
+
+def tandai_anomali(panel):
+    """K-017: tambahkan status_anomali, is_outlier, is_patahan ke panel panjang. Baris tidak berubah."""
+    peta = muat_peta_anomali()
+    kunci = zip(panel["seri_kode"].astype(str), panel["wilayah_kode"].astype(int), panel["periode"].astype(str))
+    status = pd.Series([peta.get(k, "Normal") for k in kunci], index=panel.index, dtype="string")
+    tahun = panel["periode"].astype(int)
+    pemekaran = panel["wilayah_kode"].isin(DOB_PAPUA) & (tahun >= TAHUN_PEMEKARAN)
+    hasil = panel.copy()
+    hasil["status_anomali"] = status
+    hasil["is_outlier"] = status.str.contains("Outlier", regex=False).astype(bool)
+    hasil["is_patahan"] = (status.str.contains("Patahan", regex=False) | pemekaran).astype(bool)
+    return hasil
+
+
+def catat_dampak_ke_log(info, path=LOG_KEPUTUSAN):
+    """Tulis dampak_baris K-014..K-017 (kolom terakhir) ke log-keputusan.csv. Baris lain tidak disentuh."""
+    path = Path(path)
+    teks = path.read_bytes().decode("utf-8")
+    akhir_baris = "\r\n" if "\r\n" in teks else "\n"
+    kode_aturan = {k for k, v in info.items() if isinstance(v, dict)}
+    baris_baru, ditemukan = [], set()
+    for baris in teks.split(akhir_baris):
+        kode = baris.split(",", 1)[0]
+        if kode in kode_aturan and POLA_DAMPAK.search(baris):
+            baris = POLA_DAMPAK.sub(f",{info[kode]['dampak_baris']}", baris)
+            ditemukan.add(kode)
+        baris_baru.append(baris)
+    if kode_aturan - ditemukan:
+        raise ValueError(f"log-keputusan.csv tidak memuat keputusan {sorted(kode_aturan - ditemukan)}")
+    path.write_bytes(akhir_baris.join(baris_baru).encode("utf-8"))
