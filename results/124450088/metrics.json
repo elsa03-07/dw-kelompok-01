@@ -2,7 +2,7 @@
   "metrik": {
     "aturan_validasi": 11,
     "aturan_lolos": 11,
-    "kolom_terdokumentasi": 11,
+    "kolom_terdokumentasi": 62,
     "baris_silver_tervalidasi": 1439,
     "keputusan_dicatat": 10
   },

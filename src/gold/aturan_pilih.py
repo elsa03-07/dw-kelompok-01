@@ -36,41 +36,62 @@ def muat_peta_anomali():
 def pilih_baris_gold(silver_df):
     """
     Menjalankan aturan pemilihan satu nilai per sel dari Silver.
-    Mengembalikan: (df_provinsi_terpilih, df_nasional_terpilih, jumlah_baris_tidak_terpilih)
+    Mengembalikan: (df_provinsi_terpilih, df_nasional_terpilih, info_dampak)
     """
     total_silver = len(silver_df)
     
-    # 1. Aturan Deduplikasi Snapshot (K-003): Kunci 6 dimensi
+    # 1. Aturan Deduplikasi Snapshot (K-011): Kunci 6 dimensi, keep='last'
     KUNCI_6 = ["sumber", "seri_kode", "wilayah_kode", "periode", "rincian", "_berkas_raw"]
-    df = silver_df.drop_duplicates(subset=KUNCI_6, keep='last').copy()
+    df_snapshot = silver_df.drop_duplicates(subset=KUNCI_6, keep='last').copy()
+    dampak_snapshot = total_silver - len(df_snapshot)
     
-    # 2. Filter hanya periode tahunan (K-008)
-    df = df[df['jenis_periode'] == 'tahun'].copy()
+    # 2. Aturan Integritas Periode (K-013): Wajib tahunan murni
+    df_periode = df_snapshot[df_snapshot['jenis_periode'] == 'tahun'].copy()
+    dampak_periode = len(df_snapshot) - len(df_periode)
     
-    # 3. Pemisahan Panel Provinsi (BPS: var1473, var1474)
-    bps_prov = df[(df['sumber'] == 'bps') & (df['wilayah_kode'] != 9999) & (df['rincian'] == 'Total')].copy()
+    # 3. Aturan Rincian Sebanding (K-012):
+    # - BPS Provinsi: rincian == 'Total' & bukan 9999
+    bps_prov = df_periode[(df_periode['sumber'] == 'bps') & (df_periode['wilayah_kode'] != 9999) & (df_periode['rincian'] == 'Total')].copy()
     
-    # 4. Pemisahan Tabel Nasional (BPS, WDI, WHO sebanding)
-    # Rincian WHO yang sebanding:
-    # - NUTSTUNTINGPREV: SEX=TOTAL
-    # - NUTOVERWEIGHTPREV: SEX=TOTAL
-    # - NUTRITION_WH_2: TOTAL
-    kondisi_bps_nasional = (df['sumber'] == 'bps') & (df['wilayah_kode'] == 9999) & (df['rincian'] == 'Total')
-    kondisi_wdi = (df['sumber'] == 'wdi') & (df['rincian'] == 'Total')
-    kondisi_who_stunt = (df['seri_kode'] == 'NUTSTUNTINGPREV') & (df['rincian'] == 'SEX=TOTAL')
-    kondisi_who_ow = (df['seri_kode'] == 'NUTOVERWEIGHTPREV') & (df['rincian'] == 'SEX=TOTAL')
-    kondisi_who_wh2 = (df['seri_kode'] == 'NUTRITION_WH_2') & (df['rincian'] == 'TOTAL')
+    # - Pembanding Nasional sebanding:
+    kondisi_bps_nasional = (df_periode['sumber'] == 'bps') & (df_periode['wilayah_kode'] == 9999) & (df_periode['rincian'] == 'Total')
+    kondisi_wdi = (df_periode['sumber'] == 'wdi') & (df_periode['rincian'] == 'Total')
+    kondisi_who_stunt = (df_periode['seri_kode'] == 'NUTSTUNTINGPREV') & (df_periode['rincian'] == 'SEX=TOTAL')
+    kondisi_who_ow = (df_periode['seri_kode'] == 'NUTOVERWEIGHTPREV') & (df_periode['rincian'] == 'SEX=TOTAL')
+    kondisi_who_wh2 = (df_periode['seri_kode'] == 'NUTRITION_WH_2') & (df_periode['rincian'] == 'TOTAL')
     
-    nasional_terpilih = df[
+    nasional_terpilih = df_periode[
         kondisi_bps_nasional | kondisi_wdi | kondisi_who_stunt | kondisi_who_ow | kondisi_who_wh2
     ].copy()
     
-    # Hitung jumlah baris yang tidak terpilih masuk ke Gold
-    # Seluruh baris yang tidak masuk ke panel provinsi maupun nasional
     baris_terpilih_total = len(bps_prov) + len(nasional_terpilih)
-    jumlah_tidak_terpilih = total_silver - baris_terpilih_total
+    dampak_rincian = total_silver - baris_terpilih_total
     
-    return bps_prov, nasional_terpilih, jumlah_tidak_terpilih
+    # 4. Aturan Penanda Anomali (K-014):
+    # Penanda patahan dan outlier dipertahankan tanpa membuang baris
+    dampak_anomali = 0
+    
+    info_dampak = {
+        "K-014": {
+            "nama": "Multi-Snapshot Terbaru (keep='last')",
+            "dampak_baris": int(dampak_snapshot)
+        },
+        "K-015": {
+            "nama": "Rincian Sebanding WHO vs BPS/WDI",
+            "dampak_baris": int(dampak_rincian)
+        },
+        "K-016": {
+            "nama": "Integritas Periode Tahunan",
+            "dampak_baris": int(dampak_periode)
+        },
+        "K-017": {
+            "nama": "Penanda Outlier & Patahan Seri",
+            "dampak_baris": int(dampak_anomali)
+        },
+        "total_tidak_terpilih": int(dampak_rincian)
+    }
+    
+    return bps_prov, nasional_terpilih, info_dampak
 
 def bangun_panel_provinsi(bps_prov_df):
     """
@@ -141,7 +162,7 @@ def bangun_rekonsiliasi_nasional(nasional_df):
 
 def proses_gold(silver_df):
     """Fungsi orkestrasi pembentukan seluruh tabel Gold."""
-    bps_prov, nasional_terpilih, tidak_terpilih = pilih_baris_gold(silver_df)
+    bps_prov, nasional_terpilih, info_dampak = pilih_baris_gold(silver_df)
     
     panel_prov = bangun_panel_provinsi(bps_prov)
     rekon_nas = bangun_rekonsiliasi_nasional(nasional_terpilih)
@@ -149,5 +170,6 @@ def proses_gold(silver_df):
     return {
         'panel_provinsi': panel_prov,
         'rekonsiliasi_nasional': rekon_nas,
-        'baris_tidak_terpilih': tidak_terpilih
+        'info_dampak': info_dampak,
+        'baris_tidak_terpilih': info_dampak['total_tidak_terpilih']
     }
