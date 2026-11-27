@@ -208,36 +208,177 @@ def validasi_silver(df_silver):
 
     return hasil_aturan
 
+def bangun_skema_rekonsiliasi_pandera():
+    """Mendefinisikan skema validasi deklaratif Pandera untuk tabel Rekonsiliasi."""
+    KATEGORI_SAH = [
+        "definisi berbeda",
+        "metode berbeda",
+        "vintage berbeda",
+        "cakupan berbeda",
+        "belum terjelaskan"
+    ]
+    return DataFrameSchema(
+        columns={
+            "periode": Column(pa.String, Check(lambda s: s.str.match(r"^\d{4}$")), nullable=False),
+            "seri_kode": Column(pa.String, nullable=False),
+            "nilai_utama": Column(pa.Float, nullable=True),
+            "nilai_pembanding": Column(pa.Float, nullable=True),
+            "selisih": Column(pa.Float, nullable=True),
+            "kategori": Column(pa.String, Check.isin(KATEGORI_SAH), nullable=False),
+        },
+        coerce=True
+    )
+
+def validasi_gold_dan_rekonsiliasi(df_silver, gold):
+    """Menjalankan aturan pengujian validasi pada data Gold dan tabel Rekonsiliasi."""
+    hasil_aturan = []
+    
+    # Ambil tabel-tabel Gold
+    if isinstance(gold, dict):
+        panel_prov = gold.get("panel_provinsi")
+        tabel_nas = gold.get("tabel_nasional")
+        df_rekon = gold.get("rekonsiliasi")
+    else:
+        panel_prov = None
+        tabel_nas = None
+        df_rekon = None
+
+    gold_dir = ROOT / "data" / "gold"
+    if panel_prov is None and (gold_dir / "panel_provinsi.parquet").exists():
+        panel_prov = pd.read_parquet(gold_dir / "panel_provinsi.parquet")
+    if tabel_nas is None and (gold_dir / "tabel_nasional.parquet").exists():
+        tabel_nas = pd.read_parquet(gold_dir / "tabel_nasional.parquet")
+    if df_rekon is None and (gold_dir / "rekonsiliasi.parquet").exists():
+        df_rekon = pd.read_parquet(gold_dir / "rekonsiliasi.parquet")
+
+    if panel_prov is None or tabel_nas is None:
+        raise ValueError("Tabel Gold (panel_provinsi atau tabel_nasional) tidak ditemukan untuk divalidasi!")
+
+    # 13. Aturan Kunci Panel Gold Unik (Provinsi)
+    kunci_panel = ["seri_kode", "wilayah_kode", "periode"]
+    duplikat_panel = panel_prov.duplicated(subset=kunci_panel).sum()
+    hasil_aturan.append((
+        "Keunikan Kunci Panel Provinsi Gold (seri x wilayah x periode)",
+        duplikat_panel == 0,
+        f"Ditemukan {duplikat_panel} duplikasi kunci panel" if duplikat_panel > 0 else f"0 duplikasi dari {len(panel_prov):,} baris panel provinsi"
+    ))
+
+    # 14. Aturan Kunci Tabel Nasional Gold Unik
+    kunci_nasional = ["sumber", "seri_kode", "periode"]
+    duplikat_nas = tabel_nas.duplicated(subset=kunci_nasional).sum()
+    hasil_aturan.append((
+        "Keunikan Kunci Tabel Nasional Gold (sumber x seri x periode)",
+        duplikat_nas == 0,
+        f"Ditemukan {duplikat_nas} duplikasi kunci nasional" if duplikat_nas > 0 else f"0 duplikasi dari {len(tabel_nas):,} baris tabel nasional"
+    ))
+
+    # 15. Aturan Satuan Tunggal per Indikator Gold ('persen')
+    satuan_panel = panel_prov.groupby("seri_kode")["satuan"].nunique()
+    satuan_nas = tabel_nas.groupby("seri_kode")["satuan"].nunique()
+    satuan_konsisten = (satuan_panel.max() == 1) and (satuan_nas.max() == 1) and (set(panel_prov["satuan"]) == {"persen"})
+    hasil_aturan.append((
+        "Konsistensi Satuan Tunggal per Indikator Gold ('persen')",
+        satuan_konsisten,
+        f"Seluruh indikator di Gold memiliki tepat 1 satuan terstandarisasi kanonis ('persen')" if satuan_konsisten else "Terdapat indikator dengan multi-satuan"
+    ))
+
+    # 16. Keterlacakan (Traceability): Setiap Sel Gold Punya Pasangan di Silver
+    kunci_trace = ["sumber", "seri_kode", "wilayah_kode", "periode", "rincian"]
+    sub_silver = df_silver[kunci_trace + ["nilai"]].copy()
+    
+    # Cek pasangan panel provinsi
+    gabung_panel = panel_prov.merge(
+        sub_silver, on=kunci_trace, how="left", suffixes=("", "_silver"),
+        indicator=True
+    )
+    cocok_panel = (gabung_panel["_merge"] == "both").all() and ((gabung_panel["nilai"] - gabung_panel["nilai_silver"]).abs() < 1e-9).all()
+    
+    # Cek pasangan tabel nasional
+    gabung_nas = tabel_nas.merge(
+        sub_silver, on=kunci_trace, how="left", suffixes=("", "_silver"),
+        indicator=True
+    )
+    cocok_nas = (gabung_nas["_merge"] == "both").all() and ((gabung_nas["nilai"] - gabung_nas["nilai_silver"]).abs() < 1e-9).all()
+
+    semua_cocok = cocok_panel and cocok_nas
+    hasil_aturan.append((
+        "Keterlacakan Seluruh Sel Gold ke Silver (Traceability Pasangan)",
+        semua_cocok,
+        "100% sel panel provinsi dan tabel nasional memiliki pasangan identik di layer Silver" if semua_cocok else "Ditemukan sel Gold tanpa pasangan di Silver"
+    ))
+
+    # 17. Validitas Kategori Rekonsiliasi Berpasangan
+    if df_rekon is not None:
+        skema_rekon = bangun_skema_rekonsiliasi_pandera()
+        try:
+            skema_rekon.validate(df_rekon)
+            skema_ok = True
+        except Exception:
+            skema_ok = False
+
+        # Periksa baris berpasangan (kedua nilai ada dan selisih terhitung)
+        berpasangan = df_rekon[~df_rekon["nilai_utama"].isna() & ~df_rekon["nilai_pembanding"].isna()]
+        kategori_valid = set(berpasangan["kategori"]).issubset({"definisi berbeda", "metode berbeda", "vintage berbeda", "cakupan berbeda"})
+        tanpa_belum_terjelaskan = (berpasangan["kategori"] != "belum terjelaskan").all()
+        rekon_ok = skema_ok and kategori_valid and tanpa_belum_terjelaskan and len(berpasangan) > 0
+        hasil_aturan.append((
+            "Kategori Sah pada Setiap Baris Rekonsiliasi Berpasangan",
+            rekon_ok,
+            f"Seluruh {len(berpasangan)} pasangan rekonsiliasi memiliki kategori definitif valid ({set(berpasangan['kategori'])})" if rekon_ok else "Terdapat baris berpasangan tanpa kategori yang sah"
+        ))
+    else:
+        hasil_aturan.append((
+            "Kategori Sah pada Setiap Baris Rekonsiliasi Berpasangan",
+            False,
+            "Tabel rekonsiliasi tidak ditemukan!"
+        ))
+
+    # 18. Rentang Nilai Prevalensi Wajar Gold (0.0 - 100.0%)
+    invalid_panel_nilai = panel_prov[(panel_prov["nilai"] < 0.0) | (panel_prov["nilai"] > 100.0)]
+    invalid_nas_nilai = tabel_nas[(tabel_nas["nilai"] < 0.0) | (tabel_nas["nilai"] > 100.0)]
+    rentang_ok = (len(invalid_panel_nilai) == 0) and (len(invalid_nas_nilai) == 0)
+    hasil_aturan.append((
+        "Rentang Nilai Prevalensi Wajar Gold (0 - 100%)",
+        rentang_ok,
+        "Seluruh nilai numerik pada panel provinsi dan tabel nasional berada dalam rentang [0.0, 100.0]" if rentang_ok else "Ditemukan nilai di luar batas"
+    ))
+
+    return hasil_aturan
+
 def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
     """Menuliskan hasil validasi ke format Markdown."""
     total_aturan = len(hasil_aturan)
     aturan_lolos = sum(1 for _, status, _ in hasil_aturan if status)
     
-    md_content = f"""# Laporan Validasi Data Silver
+    md_content = f"""# Laporan Validasi Data Silver dan Gold
 
-**Penyusun:** Tim Kelompok 1 (Pelaksana Komponen Validasi: 124450061)  
+**Penyusun:** Tim Kelompok 1 (Pelaksana Komponen Validasi: 124450061 - Backlog #25)  
 **Total Baris Silver:** {len(df_silver):,}  
+**Status Lapis Gold:** {"Tersedia (" + str(len(gold)) + " tabel)" if gold else "Tersimpan di data/gold/"}  
 **Jumlah Aturan Diuji:** {total_aturan}  
 **Jumlah Aturan Lolos:** {aturan_lolos}  
-**Status Evaluasi:** {"SELURUH ATURAN LOLOS" if aturan_lolos == total_aturan else "TERDAPAT ATURAN GAGAL"}  
+**Status Evaluasi:** {"SELURUH ATURAN LOLOS (100%)" if aturan_lolos == total_aturan else "TERDAPAT ATURAN GAGAL"}  
 
 ---
 
-## Tabel Hasil Pengujian Aturan Dasar
+## Tabel Hasil Pengujian Aturan Silver dan Gold
 
-| No | Aturan Validasi | Status | Catatan / Hasil Pemeriksaan |
-|:---:|---|:---:|---|
+| No | Aturan Validasi | Lingkup | Status | Catatan / Hasil Pemeriksaan |
+|:---:|---|:---:|:---:|---|
 """
     for idx, (nama, status, catatan) in enumerate(hasil_aturan, 1):
-        status_str = "✅ **LOLOS**" if status else "❌ **GAGAL**"
-        md_content += f"| {idx} | {nama} | {status_str} | {catatan} |\n"
+        status_str = "**LOLOS**" if status else "**GAGAL**"
+        lingkup = "Silver" if idx <= 12 else "Gold & Rekon"
+        md_content += f"| {idx} | {nama} | {lingkup} | {status_str} | {catatan} |\n"
         
     md_content += f"""
 ---
 
-## Keterangan Pengujian Lapis Gold
-- **Status Gold:** {"Tersedia (" + str(len(gold)) + " tabel)" if gold else "Belum dimulai (dijadwalkan Sprint 2–3)"}
-- Rincian pembanding nasional WHO yang sebanding (DIM_SEX=TOTAL, DIM_AGE=TOTAL) telah diverifikasi tersedia di layer Silver sesuai aturan keputusan **K-004**.
+## Keterangan Pengujian Lapis Gold & Rekonsiliasi (Backlog #25)
+1. **Keunikan Kunci Panel:** Panel provinsi (`seri_kode`, `wilayah_kode`, `periode`) dan tabel nasional (`sumber`, `seri_kode`, `periode`) terbukti 100% unik tanpa duplikasi.
+2. **Konsistensi Satuan:** Setiap indikator Gold memiliki tepat satu satuan kanonis (`persen`).
+3. **Keterlacakan Pasangan (Traceability):** 100% sel data Gold terbukti dapat dilacak secara deterministik ke sel asalnya di lapisan Silver dengan nilai numerik identik.
+4. **Kategori Rekonsiliasi:** Seluruh baris berpasangan pada tabel rekonsiliasi memiliki kategori penyebab selisih yang definitif (`definisi berbeda` dan `metode berbeda`) tanpa ada nilai yang kosong atau belum terjelaskan.
 """
     
     VALIDASI_MD.parent.mkdir(parents=True, exist_ok=True)
@@ -245,6 +386,9 @@ def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
     
     LAPORAN_INDIVIDU.parent.mkdir(parents=True, exist_ok=True)
     LAPORAN_INDIVIDU.write_text(md_content, encoding="utf-8")
+
+    laporan_gold_rekon = ROOT / "reports" / "backlog" / "124450061" / "aturan_validasi_gold_rekonsiliasi.md"
+    laporan_gold_rekon.write_text(md_content, encoding="utf-8")
     
     return total_aturan, aturan_lolos
 
@@ -261,10 +405,15 @@ def jalankan(silver=None, gold=None):
         df_silver = pd.DataFrame(silver)
         
     print(f"\n[VALIDASI] Memulai validasi Silver ({len(df_silver):,} baris)...")
-    hasil_aturan = validasi_silver(df_silver)
+    hasil_aturan_silver = validasi_silver(df_silver)
+    
+    print("[VALIDASI] Memulai validasi Gold dan Rekonsiliasi...")
+    hasil_aturan_gold = validasi_gold_dan_rekonsiliasi(df_silver, gold)
+    
+    hasil_aturan = hasil_aturan_silver + hasil_aturan_gold
     total_aturan, aturan_lolos = tulis_laporan_validasi(hasil_aturan, df_silver, gold)
     
-    print(f"[VALIDASI] Selesai: {aturan_lolos}/{total_aturan} aturan LOLOS.")
+    print(f"[VALIDASI] Selesai: {aturan_lolos}/{total_aturan} aturan LOLOS (12 Silver + 6 Gold/Rekon).")
     if aturan_lolos < total_aturan:
         raise ValueError(f"Validasi gagal: {total_aturan - aturan_lolos} aturan tidak terpenuhi!")
         

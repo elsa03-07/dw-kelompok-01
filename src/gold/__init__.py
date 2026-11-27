@@ -3,7 +3,7 @@
 from pathlib import Path
 import pandas as pd
 
-from src.gold.builder import SILVER_FILE, bangun_gold
+from src.gold.builder import SILVER_FILE, bangun_gold, rekonsiliasi_golongan
 from src.gold.aturan_pilih import proses_gold
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,8 +17,11 @@ def jalankan(silver=None):
 
     GOLD_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Bangun Gold kanonis tim (panel long 628 baris, tabel nasional, tabel nasional lebar)
+    # 1. Bangun Gold kanonis tim (panel long 628 baris, tabel nasional, tabel nasional lebar, rekonsiliasi)
     tabel = bangun_gold(silver)
+    rekon = rekonsiliasi_golongan(tabel["panel_provinsi"], tabel["tabel_nasional"])
+    tabel["rekonsiliasi"] = rekon
+
     for nama, df in tabel.items():
         tujuan = GOLD_DIR / f"{nama}.parquet"
         df.to_parquet(tujuan, index=False)
