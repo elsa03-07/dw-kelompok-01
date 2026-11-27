@@ -49,16 +49,16 @@ Setiap aturan pencatatan terdaftar di [log-keputusan.csv](file:///C:/Users/daffa
 
 | ID Keputusan | Aturan Seleksi | Logika & Implementasi | Seri Terdampak | Dampak Baris (Tidak Terpilih) |
 |---|---|---|---|:---:|
-| **K-011** | Deduplikasi Multi-Snapshot | Mempertahankan observasi snapshot terbaru (`keep='last'`) berdasarkan kunci 6-dimensi bila ada revisi data resmi | `var1473`, `var1474`, WDI, WHO | **0 baris** *(karena Silver sudah unik 6 dimensi)* |
-| **K-012** | Rincian Sebanding WHO vs BPS/WDI | Hanya memilih rincian agregat total (`SEX=TOTAL` dan `TOTAL` murni) yang sebanding dengan seri BPS & WDI; subkelompok usia/gender tetap berada di Silver | `NUTSTUNTINGPREV`, `NUTOVERWEIGHTPREV`, `NUTRITION_WH_2` | **697 baris** *(50 stunting + 50 overweight + 597 wasting subkelompok)* |
-| **K-013** | Integritas Periode Temporal | Wajib unit observasi tahunan murni (`jenis_periode == 'tahun'`); menolak agregasi/perataan buatan non-tahunan | Seluruh 7 seri Kasus 01 | **0 baris** *(seluruh 7 seri terverifikasi tahunan)* |
-| **K-014** | Pembawaan Penanda Anomali | Membawa flag `is_outlier` dan `is_patahan` dari Sprint 1 ke panel Gold tanpa membuang baris data observasi | `var1473`, `var1474` (BPS) | **0 baris** *(tidak ada baris yang dihapus/dibuang)* |
+| **K-014** | Deduplikasi Multi-Snapshot | Mempertahankan observasi snapshot terbaru (`keep='last'`) berdasarkan kunci 6-dimensi bila ada revisi data resmi | `var1473`, `var1474`, WDI, WHO | **0 baris** *(karena Silver sudah unik 6 dimensi)* |
+| **K-015** | Rincian Sebanding WHO vs BPS/WDI | Hanya memilih rincian agregat total (`SEX=TOTAL` dan `TOTAL` murni) yang sebanding dengan seri BPS & WDI; subkelompok usia/gender tetap berada di Silver | `NUTSTUNTINGPREV`, `NUTOVERWEIGHTPREV`, `NUTRITION_WH_2` | **697 baris** *(50 stunting + 50 overweight + 597 wasting subkelompok)* |
+| **K-016** | Integritas Periode Temporal | Wajib unit observasi tahunan murni (`jenis_periode == 'tahun'`); menolak agregasi/perataan buatan non-tahunan | Seluruh 7 seri Kasus 01 | **0 baris** *(seluruh 7 seri terverifikasi tahunan)* |
+| **K-017** | Pembawaan Penanda Anomali | Membawa flag `is_outlier` dan `is_patahan` dari Sprint 1 ke panel Gold tanpa membuang baris data observasi | `var1473`, `var1474` (BPS) | **0 baris** *(tidak ada baris yang dihapus/dibuang)* |
 
-### 3.1. Penjelasan Aturan Penanganan Multi-Snapshot (K-011)
+### 3.1. Penjelasan Aturan Penanganan Multi-Snapshot (K-014)
 Jika terdapat observasi dengan kombinasi kunci primer yang identik dari dua berkas snapshot yang berbeda:
 - **Aturan:** Menggunakan prinsip *revisi resmi produsen data* (`drop_duplicates(subset=KUNCI_6, keep='last')`). Snapshot terbaru diperlakukan sebagai angka revisi mutakhir dari BPS/World Bank, sementara angka snapshot lama diarsipkan di Silver.
 
-### 3.2. Penjelasan Aturan Penyaringan Rincian Sebanding (K-012)
+### 3.2. Penjelasan Aturan Penyaringan Rincian Sebanding (K-015)
 Seri utama BPS (`var1473` dan `var1474`) diukur pada tingkat agregat seluruh penduduk provinsi (tanpa disagregasi gender balita). Agar perbandingan pada layer Gold valid dan adil (*apples-to-apples comparison*):
 1. **Seri BPS (Provinsi & Nasional):** Hanya memilih baris dengan `rincian == 'Total'`.
 2. **Seri WDI (Nasional):** Hanya memilih baris dengan `rincian == 'Total'`.
@@ -68,11 +68,11 @@ Seri utama BPS (`var1473` dan `var1474`) diukur pada tingkat agregat seluruh pen
    - `NUTRITION_WH_2`: Hanya memilih rincian agregat total `TOTAL` murni (12 baris terpilih).
    - **Rincian Subkelompok yang Ditolak dari Gold:** Sebanyak **697 baris** Silver (50 baris stunting gender terpisah + 50 baris overweight gender terpisah + 597 baris wasting rincian umur/derajat urban) **TIDAK terpilih** masuk ke tabel Gold dan tetap dipertahankan aman di lapisan Silver.
 
-### 3.3. Penjelasan Aturan Penanganan Periode Temporal (K-013)
+### 3.3. Penjelasan Aturan Penanganan Periode Temporal (K-016)
 - Seluruh 7 seri indikator pada Kasus 01 memiliki frekuensi pengukuran tahunan murni (`jenis_periode == 'tahun'`).
 - Mengikuti keputusan `K-008`, pipeline menolak melakukan perataan paksa (*averaging/aggregating*) terhadap periode semesteran atau bulanan (jika ada data turunan di masa depan), guna mencegah bias estimasi dan menjaga keterlacakan data ke berkas mentah.
 
-### 3.4. Penjelasan Aturan Pembawaan Penanda Anomali (K-014)
+### 3.4. Penjelasan Aturan Pembawaan Penanda Anomali (K-017)
 Sesuai hasil profiling Sprint 1, nilai ekstrem dan lonjakan data tidak dihapus melainkan diberi label diagnostik:
 - Penanda anomali dari `reports/backlog/124450061/daftar_anomali_terklasifikasi.csv` disematkan langsung sebagai kolom metadata pada tabel panel Gold:
   - `status_anomali_var1473`: Kategori anomali indikator PoU (`NORMAL`, `OUTLIER_ASLI`, `PATAHAN_SERI`).
@@ -123,10 +123,10 @@ Output mencatat secara transparan setiap rantai pemanggilan dan dampak baris tia
 Alur Pemanggilan: pipeline.py -> src.gold.jalankan() -> src.gold.aturan_pilih.pilih_baris_gold()
 ----------------------------------------------------------------------
 Pencatatan Dampak Baris per Aturan (tercatat di log-keputusan.csv):
-  - [K-011] Multi-Snapshot Terbaru (keep='last')  : 0 baris
-  - [K-012] Rincian Sebanding WHO vs BPS/WDI      : 697 baris
-  - [K-013] Integritas Periode Tahunan            : 0 baris
-  - [K-014] Penanda Outlier & Patahan Seri        : 0 baris
+  - [K-014] Multi-Snapshot Terbaru (keep='last')  : 0 baris
+  - [K-015] Rincian Sebanding WHO vs BPS/WDI      : 697 baris
+  - [K-016] Integritas Periode Tahunan            : 0 baris
+  - [K-017] Penanda Outlier & Patahan Seri        : 0 baris
 Total baris Silver yang tidak terpilih (sub-rincian tetap di Silver): 697 baris.
 ----------------------------------------------------------------------
 Keluaran Gold berhasil disimpan:

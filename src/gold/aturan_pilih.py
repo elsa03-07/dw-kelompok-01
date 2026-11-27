@@ -72,19 +72,19 @@ def pilih_baris_gold(silver_df):
     dampak_anomali = 0
     
     info_dampak = {
-        "K-011": {
+        "K-014": {
             "nama": "Multi-Snapshot Terbaru (keep='last')",
             "dampak_baris": int(dampak_snapshot)
         },
-        "K-012": {
+        "K-015": {
             "nama": "Rincian Sebanding WHO vs BPS/WDI",
             "dampak_baris": int(dampak_rincian)
         },
-        "K-013": {
+        "K-016": {
             "nama": "Integritas Periode Tahunan",
             "dampak_baris": int(dampak_periode)
         },
-        "K-014": {
+        "K-017": {
             "nama": "Penanda Outlier & Patahan Seri",
             "dampak_baris": int(dampak_anomali)
         },
