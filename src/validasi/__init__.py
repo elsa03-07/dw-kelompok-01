@@ -18,6 +18,8 @@ except ImportError:
     import pandera as pa
     from pandera import Column, Check, DataFrameSchema
 
+from src.gold.rekonsiliasi import KATEGORI_SAH, PASANGAN
+
 ROOT = Path(__file__).resolve().parents[2]
 VALIDASI_MD = ROOT / "reports" / "validasi.md"
 LAPORAN_INDIVIDU = ROOT / "reports" / "backlog" / "124450061" / "laporan_validasi_silver.md"
@@ -210,22 +212,19 @@ def validasi_silver(df_silver):
 
 def bangun_skema_rekonsiliasi_pandera():
     """Mendefinisikan skema validasi deklaratif Pandera untuk tabel Rekonsiliasi."""
-    KATEGORI_SAH = [
-        "definisi berbeda",
-        "metode berbeda",
-        "vintage berbeda",
-        "cakupan berbeda",
-        "belum terjelaskan"
-    ]
     return DataFrameSchema(
         columns={
             "periode": Column(pa.String, Check(lambda s: s.str.match(r"^\d{4}$")), nullable=False),
-            "seri_kode": Column(pa.String, nullable=False),
-            "nilai_utama": Column(pa.Float, nullable=True),
-            "nilai_pembanding": Column(pa.Float, nullable=True),
+            "seri_utama": Column(pa.String, Check.isin(list(PASANGAN)), nullable=False),
+            "seri_pembanding": Column(pa.String, Check.isin([p["seri_pembanding"] for p in PASANGAN.values()]), nullable=False),
+            "nilai_utama": Column(pa.Float, Check.in_range(0, 100), nullable=True),
+            "nilai_pembanding": Column(pa.Float, Check.in_range(0, 100), nullable=True),
             "selisih": Column(pa.Float, nullable=True),
+            "status_pasangan": Column(pa.String, Check.isin(["berpasangan", "hanya_utama", "hanya_pembanding"]), nullable=False),
             "kategori": Column(pa.String, Check.isin(KATEGORI_SAH), nullable=False),
+            "penjelasan": Column(pa.String, Check.str_length(min_value=10), nullable=False),
         },
+        unique=["seri_utama", "periode"],
         coerce=True
     )
 
@@ -307,28 +306,31 @@ def validasi_gold_dan_rekonsiliasi(df_silver, gold):
         "100% sel panel provinsi dan tabel nasional memiliki pasangan identik di layer Silver" if semua_cocok else "Ditemukan sel Gold tanpa pasangan di Silver"
     ))
 
-    # 17. Validitas Kategori Rekonsiliasi Berpasangan
+    # 17. Setiap baris rekonsiliasi dijelaskan: berpasangan -> kategori penyebab selisih,
+    #     tidak berpasangan -> 'tanpa pasangan'. Tidak ada 'belum terjelaskan'.
     if df_rekon is not None:
-        skema_rekon = bangun_skema_rekonsiliasi_pandera()
         try:
-            skema_rekon.validate(df_rekon)
-            skema_ok = True
-        except Exception:
-            skema_ok = False
+            bangun_skema_rekonsiliasi_pandera().validate(df_rekon)
+            skema_ok, alasan = True, ""
+        except Exception as e:
+            skema_ok, alasan = False, f"skema gagal: {str(e).splitlines()[0]}"
 
-        # Periksa baris berpasangan (kedua nilai ada dan selisih terhitung)
-        berpasangan = df_rekon[~df_rekon["nilai_utama"].isna() & ~df_rekon["nilai_pembanding"].isna()]
-        kategori_valid = set(berpasangan["kategori"]).issubset({"definisi berbeda", "metode berbeda", "vintage berbeda", "cakupan berbeda"})
-        tanpa_belum_terjelaskan = (berpasangan["kategori"] != "belum terjelaskan").all()
-        rekon_ok = skema_ok and kategori_valid and tanpa_belum_terjelaskan and len(berpasangan) > 0
+        berpasangan = df_rekon["status_pasangan"] == "berpasangan"
+        kategori_pasangan_ok = (~df_rekon.loc[berpasangan, "kategori"].isin(["tanpa pasangan", "belum terjelaskan"])).all()
+        selisih_ok = df_rekon.loc[berpasangan, "selisih"].notna().all()
+        tanpa_pasangan_ok = (df_rekon.loc[~berpasangan, "kategori"] == "tanpa pasangan").all()
+        rekon_ok = skema_ok and kategori_pasangan_ok and selisih_ok and tanpa_pasangan_ok and berpasangan.sum() > 0
         hasil_aturan.append((
-            "Kategori Sah pada Setiap Baris Rekonsiliasi Berpasangan",
+            "Setiap Baris Rekonsiliasi Dijelaskan (berpasangan berkategori, sisanya 'tanpa pasangan')",
             rekon_ok,
-            f"Seluruh {len(berpasangan)} pasangan rekonsiliasi memiliki kategori definitif valid ({set(berpasangan['kategori'])})" if rekon_ok else "Terdapat baris berpasangan tanpa kategori yang sah"
+            (f"{int(berpasangan.sum())} baris berpasangan berkategori "
+             f"{sorted(set(df_rekon.loc[berpasangan, 'kategori']))}; "
+             f"{int((~berpasangan).sum())} baris tanpa pasangan; 0 'belum terjelaskan'")
+            if rekon_ok else (alasan or "Ada baris rekonsiliasi tanpa kategori yang sesuai statusnya")
         ))
     else:
         hasil_aturan.append((
-            "Kategori Sah pada Setiap Baris Rekonsiliasi Berpasangan",
+            "Setiap Baris Rekonsiliasi Dijelaskan (berpasangan berkategori, sisanya 'tanpa pasangan')",
             False,
             "Tabel rekonsiliasi tidak ditemukan!"
         ))
@@ -345,6 +347,20 @@ def validasi_gold_dan_rekonsiliasi(df_silver, gold):
 
     return hasil_aturan
 
+
+def validasi_sql(hasil_sql):
+    """19. Jumlah baris dan jumlah nilai setiap tabel di SQL sama dengan Parquet (Backlog #23)."""
+    if not hasil_sql:
+        return [("Jumlah Baris SQL = Parquet untuk Silver dan Gold", False, "Tahap SQL tidak dijalankan")]
+    gagal = [h["tabel"] for h in hasil_sql if not h["cocok"]]
+    rincian = ", ".join(f"{h['tabel']} {h['baris_sql']}" for h in hasil_sql)
+    return [(
+        "Jumlah Baris SQL = Parquet untuk Silver dan Gold",
+        not gagal,
+        f"{len(hasil_sql)} tabel cocok ({rincian})" if not gagal else f"Tidak cocok: {gagal}",
+    )]
+
+
 def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
     """Menuliskan hasil validasi ke format Markdown."""
     total_aturan = len(hasil_aturan)
@@ -354,7 +370,7 @@ def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
 
 **Penyusun:** Tim Kelompok 1 (Pelaksana Komponen Validasi: 124450061 - Backlog #25)  
 **Total Baris Silver:** {len(df_silver):,}  
-**Status Lapis Gold:** {"Tersedia (" + str(len(gold)) + " tabel)" if gold else "Tersimpan di data/gold/"}  
+**Status Lapis Gold:** {"Tersedia (" + str(len([k for k in gold if not k.startswith("_")])) + " tabel kanonis)" if gold else "Tersimpan di data/gold/"}
 **Jumlah Aturan Diuji:** {total_aturan}  
 **Jumlah Aturan Lolos:** {aturan_lolos}  
 **Status Evaluasi:** {"SELURUH ATURAN LOLOS (100%)" if aturan_lolos == total_aturan else "TERDAPAT ATURAN GAGAL"}  
@@ -368,7 +384,7 @@ def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
 """
     for idx, (nama, status, catatan) in enumerate(hasil_aturan, 1):
         status_str = "**LOLOS**" if status else "**GAGAL**"
-        lingkup = "Silver" if idx <= 12 else "Gold & Rekon"
+        lingkup = "Silver" if idx <= 12 else ("SQL" if nama.startswith("Jumlah Baris SQL") else "Gold & Rekon")
         md_content += f"| {idx} | {nama} | {lingkup} | {status_str} | {catatan} |\n"
         
     md_content += f"""
@@ -378,7 +394,8 @@ def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
 1. **Keunikan Kunci Panel:** Panel provinsi (`seri_kode`, `wilayah_kode`, `periode`) dan tabel nasional (`sumber`, `seri_kode`, `periode`) terbukti 100% unik tanpa duplikasi.
 2. **Konsistensi Satuan:** Setiap indikator Gold memiliki tepat satu satuan kanonis (`persen`).
 3. **Keterlacakan Pasangan (Traceability):** 100% sel data Gold terbukti dapat dilacak secara deterministik ke sel asalnya di lapisan Silver dengan nilai numerik identik.
-4. **Kategori Rekonsiliasi:** Seluruh baris berpasangan pada tabel rekonsiliasi memiliki kategori penyebab selisih yang definitif (`definisi berbeda` dan `metode berbeda`) tanpa ada nilai yang kosong atau belum terjelaskan.
+4. **Kategori Rekonsiliasi:** Baris berpasangan (BPS vs WDI pada periode yang sama) wajib memiliki selisih dan kategori penyebab selisih; baris yang hanya ada di salah satu sisi wajib berlabel `tanpa pasangan` beserta penjelasannya. Kategori `belum terjelaskan` tidak boleh muncul.
+5. **SQL (Backlog #23):** Setelah `pipeline.py` memuat Silver dan Gold ke `data/capstone.sqlite`, jumlah baris dan jumlah kolom `nilai` setiap tabel dibandingkan dengan Parquet sumbernya.
 """
     
     VALIDASI_MD.parent.mkdir(parents=True, exist_ok=True)
@@ -392,7 +409,7 @@ def tulis_laporan_validasi(hasil_aturan, df_silver, gold=None):
     
     return total_aturan, aturan_lolos
 
-def jalankan(silver=None, gold=None):
+def jalankan(silver=None, gold=None, sql=None):
     """Fungsi utama yang dipanggil oleh pipeline.py."""
     if silver is None:
         silver_path = ROOT / "data" / "silver" / "silver.parquet"
@@ -410,10 +427,14 @@ def jalankan(silver=None, gold=None):
     print("[VALIDASI] Memulai validasi Gold dan Rekonsiliasi...")
     hasil_aturan_gold = validasi_gold_dan_rekonsiliasi(df_silver, gold)
     
-    hasil_aturan = hasil_aturan_silver + hasil_aturan_gold
+    hasil_aturan = hasil_aturan_silver + hasil_aturan_gold + validasi_sql(sql)
     total_aturan, aturan_lolos = tulis_laporan_validasi(hasil_aturan, df_silver, gold)
-    
-    print(f"[VALIDASI] Selesai: {aturan_lolos}/{total_aturan} aturan LOLOS (12 Silver + 6 Gold/Rekon).")
+
+    print(f"[VALIDASI] Selesai: {aturan_lolos}/{total_aturan} aturan LOLOS "
+          f"({len(hasil_aturan_silver)} Silver + {len(hasil_aturan_gold)} Gold/Rekon + 1 SQL).")
+    for nama, status, catatan in hasil_aturan:
+        if not status:
+            print(f"  GAGAL: {nama}: {catatan}")
     if aturan_lolos < total_aturan:
         raise ValueError(f"Validasi gagal: {total_aturan - aturan_lolos} aturan tidak terpenuhi!")
         
