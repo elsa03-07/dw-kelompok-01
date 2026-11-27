@@ -1,4 +1,4 @@
-# Laporan tim — Kelompok 1, kasus 01 Kerawanan pangan provinsi
+﻿# Laporan tim — Kelompok 1, kasus 01 Kerawanan pangan provinsi
 
 Satu dokumen bersama, enam bagian. Angka harus dapat ditarik ulang dari `data/silver`, `data/gold`,
 dan `log-keputusan.csv` yang sudah di-*commit*.
@@ -21,6 +21,10 @@ Temuan utama terkait kualitas data menunjukkan bahwa setelah standardisasi wilay
   * Atribut `_sha256_raw` diambil secara otomatis dan dinamis menggunakan pemanggil fungsi `src.common.manifest.sha256_raw(berkas)`. Nilai hash 64-karakter ini divalidasi langsung terhadap `MANIFEST.csv` tanpa pernah diketik manual, menjamin audit keterlacakan setiap baris observasi hingga ke fisik berkas mentahnya.
 * **Hasil Tarik Ulang dan Pembandingan Snapshot:**
   Perbandingan data BPS antara snapshot 17 Oktober dan 20 Oktober 2026 menunjukkan kestabilan angka observasi pada deret waktu historis. Nilai pada snapshot 20 Oktober ditetapkan sebagai angka rilis mutakhir resmi BPS (`K-003`), dan pasangan observasi identik dari dua snapshot di-deduplikasi menjadi satu observasi kanonik di lapisan Silver.
+* **Pemilihan Basis Data (SQLite) dan Perbandingan dengan JSON Mentah:**
+  * **Alasan memilih SQLite:** Bersifat serverless (berbasis berkas lokal data/capstone.sqlite) tanpa perlu menjalankan server basis data terpisah, mudah direplikasi lewat pipeline Python, dan menjaga repositori tetap ringan karena berkas .sqlite diabaikan di .gitignore
+  * **Perbandingan dengan penyimpanan JSON mentah:** Menyimpan respons JSON mentah sebagai dokumen cocok untuk arsip mentah, tetapi kurang efisien untuk menegakkan primary key, tipe data eksplisit, agregasi lintas wilayah/periode, dan kueri rekonsiliasi berulang dibandingkan tabel relasional SQLite.
+  * **Kesesuaian kasus:** Dataset Silver dan Gold bersifat tabular dan panel (silver, panel_gold, tabel_nasional, dan rekonsiliasi_nasional) yang sering di-kueri berdasarkan kunci utama dan dimensi waktu/wilayah, sehingga skema relasional lebih sesuai.
 
 ---
 
@@ -113,3 +117,4 @@ Sesuai Kontrak Tim dan pembagian peran di DSWorkbench, berikut adalah kontribusi
 | DAFFA KHARISMA ADZANA | 124450061 | Profil dan pembersihan | Penjaga Data & Evaluasi | Profiling data mentah, deteksi anomali/outlier vs patahan seri (K-002), evaluasi grid kelengkapan & strategi missing (K-005) |
 | Elsa Sitorus | 124450088 | Validasi dan dokumentasi | Koordinator | Ringkasan eksekutif, koordinasi sprint & DoD, validasi skema Silver, dan penyusunan kamus data 11 kolom |
 | Zannuba Arifah Ilman | 124450112 | Ekstraksi dan lineage | Integrator | Data dan lineage, implementasi pembaca berkas mentah BPS, WDI, WHO GHO, dan orkestrasi fungsi ekstraksi |
+

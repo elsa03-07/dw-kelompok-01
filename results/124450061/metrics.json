@@ -1,11 +1,11 @@
 {
   "metrik": {
+    "baris_silver": 1439,
     "baris_gold_panel": 314,
     "baris_gold_rekonsiliasi": 27,
     "baris_silver_tidak_terpilih": 697,
-    "baris_silver": 1439,
-    "aturan_validasi": 12,
-    "aturan_lolos": 12,
+    "aturan_validasi": 18,
+    "aturan_lolos": 18,
     "outlier_ditandai": 45,
     "patahan_seri": 16,
     "keputusan_dicatat": 6

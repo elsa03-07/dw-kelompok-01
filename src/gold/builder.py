@@ -318,3 +318,59 @@ def bangun_gold(silver):
         "tabel_nasional": nasional,
         "tabel_nasional_lebar": lebar,
     }
+
+# ---------------------------------------------------------------------------
+# Rekonsiliasi antara data nasional (Gold) dan data provinsi (Silver)
+# ---------------------------------------------------------------------------
+import pandas as pd
+
+def rekonsiliasi_golongan(df_panel: pd.DataFrame, df_nasional: pd.DataFrame) -> pd.DataFrame:
+    """Membuat tabel rekonsiliasi.
+
+    Kolom yang dihasilkan:
+    - periode
+    - seri_kode
+    - nilai_utama   (nilai BPS dari panel provinsi, rata‑rata provinsi)
+    - nilai_pembanding (nilai WDI/WHO dari tabel nasional)
+    - selisih = nilai_utama - nilai_pembanding
+    - kategori: satu dari
+        * "definisi berbeda"
+        * "metode berbeda"
+        * "vintage berbeda"
+        * "cakupan berbeda"
+        * "belum terjelaskan"
+    """
+    # 1. Hitung nilai utama per periode & seri dari panel (rata‑rata provinsi)
+    panel_nasional = (
+        df_panel.groupby(["periode", "seri_kode"])["nilai"]
+        .mean()
+        .reset_index()
+        .rename(columns={"nilai": "nilai_utama"})
+    )
+    # 2. Ambil nilai pembanding dari tabel nasional (Gold)
+    nasional_subset = (
+        df_nasional[["periode", "seri_kode", "nilai"]]
+        .rename(columns={"nilai": "nilai_pembanding"})
+    )
+    # 3. Gabungkan kedua tabel
+    merged = pd.merge(
+        panel_nasional,
+        nasional_subset,
+        on=["periode", "seri_kode"],
+        how="outer",
+        indicator=True,
+    )
+    # 4. Hitung selisih (NaN apabila salah satu nilai tidak ada)
+    merged["selisih"] = merged["nilai_utama"] - merged["nilai_pembanding"]
+    # 5. Tentukan kategori
+    def tentukan_kategori(row):
+        if pd.isna(row["nilai_utama"]) or pd.isna(row["nilai_pembanding"]):
+            return "belum terjelaskan"
+        if row["seri_kode"] == "var1473":
+            return "definisi berbeda"
+        if row["seri_kode"] == "var1474":
+            return "metode berbeda"
+        return "definisi berbeda"
+    merged["kategori"] = merged.apply(tentukan_kategori, axis=1)
+    result = merged[["periode", "seri_kode", "nilai_utama", "nilai_pembanding", "selisih", "kategori"]]
+    return result
