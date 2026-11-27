@@ -120,6 +120,27 @@ def bangun_panel(silver):
         & (silver["rincian"] == "Total")
     ].copy()
     panel = _tambah_meta(panel)
+    # add normalized column (placeholder, actual conversion can be added later)
+    panel["nilai_normal"] = panel["nilai"]
+    # deduplicate on key columns (seri_kode, wilayah_kode, periode)
+    if panel.duplicated(KUNCI_PANEL, keep=False).any():
+        # aggregate duplicated rows: mean for nilai, first for other columns
+        agg_dict = {col: "first" for col in KOLOM_PANEL}
+        agg_dict["nilai"] = "mean"
+        agg_dict["nilai_normal"] = "first"
+        panel = panel.groupby(KUNCI_PANEL, as_index=False).agg(agg_dict)
+    # ensure column order matches KOLOM_PANEL plus the new normalized column
+    panel = panel[KOLOM_PANEL + ["nilai_normal"]].sort_values(
+        ["seri_kode", "wilayah_kode", "periode"]
+    ).reset_index(drop=True)
+    return panel
+    panel = silver[
+        (silver["sumber"] == "bps")
+        & (silver["seri_kode"].isin(PANEL_SERI))
+        & (silver["wilayah_kode"] != 9999)
+        & (silver["rincian"] == "Total")
+    ].copy()
+    panel = _tambah_meta(panel)
     panel = panel[KOLOM_PANEL].sort_values(
         ["seri_kode", "wilayah_kode", "periode"]
     ).reset_index(drop=True)
