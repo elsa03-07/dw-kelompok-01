@@ -27,16 +27,30 @@ def jalankan(silver=None):
             raise FileNotFoundError(f"Berkas Silver Parquet tidak ditemukan di: {silver_file}")
         silver = pd.read_parquet(silver_file)
         
+    print("\n" + "=" * 70)
+    print("[GOLD] Menjalankan Tahap 4 (Persiapan Gold) - Backlog #20")
+    print("Alur Pemanggilan: pipeline.py -> src.gold.jalankan() -> src.gold.aturan_pilih.pilih_baris_gold()")
+    print("-" * 70)
+    
     hasil = proses_gold(silver)
     df_panel = hasil["panel_provinsi"]
     df_rekon = hasil["rekonsiliasi_nasional"]
+    info_dampak = hasil["info_dampak"]
+    
+    print("Pencatatan Dampak Baris per Aturan (tercatat di log-keputusan.csv):")
+    for k, v in info_dampak.items():
+        if k.startswith("K-"):
+            print(f"  - [{k}] {v['nama']:<38}: {v['dampak_baris']} baris")
+    print(f"Total baris Silver yang tidak terpilih (sub-rincian tetap di Silver): {hasil['baris_tidak_terpilih']:,} baris.")
+    print("-" * 70)
     
     df_panel.to_parquet(PANEL_PROV_FILE, index=False)
     df_rekon.to_parquet(REKON_NAS_FILE, index=False)
     
-    print(f"data/gold/panel_provinsi.parquet berhasil dibuat: {len(df_panel):,} baris ({len(df_panel.columns)} kolom).")
-    print(f"data/gold/rekonsiliasi_nasional.parquet berhasil dibuat: {len(df_rekon):,} baris ({len(df_rekon.columns)} kolom).")
-    print(f"Jumlah baris Silver yang tidak terpilih (sub-rincian tetap di Silver): {hasil['baris_tidak_terpilih']:,} baris.")
+    print(f"Keluaran Gold berhasil disimpan:")
+    print(f"  1. data/gold/panel_provinsi.parquet       : {len(df_panel):,} baris x {len(df_panel.columns)} kolom")
+    print(f"  2. data/gold/rekonsiliasi_nasional.parquet : {len(df_rekon):,} baris x {len(df_rekon.columns)} kolom")
+    print("=" * 70 + "\n")
     
     return {
         "panel_provinsi": df_panel,
