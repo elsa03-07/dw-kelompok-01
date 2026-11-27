@@ -24,7 +24,8 @@ Temuan utama terkait kualitas data menunjukkan bahwa setelah standardisasi wilay
 * **Pemilihan Basis Data (SQLite) dan Perbandingan dengan JSON Mentah:**
   * **Alasan memilih SQLite:** Bersifat serverless (berbasis berkas lokal data/capstone.sqlite) tanpa perlu menjalankan server basis data terpisah, mudah direplikasi lewat pipeline Python, dan menjaga repositori tetap ringan karena berkas .sqlite diabaikan di .gitignore
   * **Perbandingan dengan penyimpanan JSON mentah:** Menyimpan respons JSON mentah sebagai dokumen cocok untuk arsip mentah, tetapi kurang efisien untuk menegakkan primary key, tipe data eksplisit, agregasi lintas wilayah/periode, dan kueri rekonsiliasi berulang dibandingkan tabel relasional SQLite.
-  * **Kesesuaian kasus:** Dataset Silver dan Gold bersifat tabular dan panel (silver, panel_gold, tabel_nasional, dan rekonsiliasi_nasional) yang sering di-kueri berdasarkan kunci utama dan dimensi waktu/wilayah, sehingga skema relasional lebih sesuai.
+  * **Kesesuaian kasus:** Dataset Silver dan Gold bersifat tabular dan panel (`silver`, `panel_provinsi`, `tabel_nasional`, `tabel_nasional_lebar`, `rekonsiliasi`) yang sering di-kueri berdasarkan kunci utama dan dimensi waktu/wilayah, sehingga skema relasional lebih sesuai.
+  * **Pemuatan dari pipeline (K-019):** tahap `sql` di `pipeline.py` (`src/sql/`) membangun ulang `data/capstone.sqlite` dari Parquet setiap kali pipeline dijalankan, memakai DDL `src/silver/skema_silver.sql` dan `src/gold/skema_gold.sql` (kunci primer dan `CHECK` rentang nilai). Baris dimuat dengan `INSERT` biasa sehingga kunci ganda menggagalkan pemuatan, bukan menimpa baris. Setelah pemuatan, jumlah baris dan jumlah kolom `nilai` setiap tabel dibandingkan dengan Parquet; kelima tabel cocok (1.439 / 628 / 114 / 30 / 36 baris, lihat `reports/ringkasan_pipeline.md`).
 
 ---
 
@@ -77,16 +78,46 @@ Berdasarkan proses audit data mentah, profiling statistik deskriptif, dan penyus
 ---
 
 ## Integrasi dan rekonsiliasi
-Integrasi pada kasus ini mempertemukan estimasi kerawanan pangan tingkat provinsi BPS dengan seri pembanding makro nasional dari Bank Dunia (WDI) dan Organisasi Kesehatan Dunia (WHO GHO):
+Integrasi mempertemukan seri utama BPS (provinsi dan nasional) dengan pembanding nasional WDI dan WHO GHO. Semua angka di bagian ini dapat ditarik ulang dari `data/gold/` setelah `python pipeline.py`.
 
-1. **BPS vs World Bank WDI (PoU & FIES):**
-   * Seri PoU BPS (`var1473`) disandingkan dengan WDI `SN.ITK.DEFC.ZS` (SDG 2.1.1). Terdapat selisih deviasi marginal yang disebabkan oleh perbedaan metodologi: BPS menghitung langsung dari mikrodata SUSENAS konsumsi kalori, sedangkan World Bank/FAO menerapkan model parametrik log-normal/skew-log-normal dengan parameter DEC (*Dietary Energy Consumption*) yang disesuaikan secara global.
-   * Seri FIES BPS (`var1474`) disandingkan dengan WDI `SN.ITK.MSFI.ZS` (SDG 2.1.2). Tren kedua seri bergerak konsisten, di mana selisih absolut diklasifikasikan sebagai **Metode berbeda** (skala pengukuran Rasch model nasional BPS vs kalibrasi standar global FAO).
-2. **BPS vs WHO GHO (Status Gizi Balita):**
-   * Seri WHO GHO (`NUTSTUNTINGPREV`, `NUTOVERWEIGHTPREV`, `NUTRITION_WH_2`) membawa 73 rincian multidimensi. Pada integrasi Gold, data disaring ke level agregat nasional total balita (`K-004`). Selisih antara angka kerawanan pangan keluarga BPS dan prevalensi malnutrisi anak WHO diklasifikasikan sebagai **Definisi berbeda** (kerawanan akses ekonomi rumah tangga vs manifestasi biologis/kesehatan anak).
-3. **Agenda Sprint 2 & 3:**
-   * Pembentukan tabel rekonsiliasi formal pada panel lebar Gold (`data/gold/rekonsiliasi_nasional.parquet`) dengan kolom: `periode, nilai_bps, nilai_pembanding, selisih, kategori_penjelasan`.
-   * Analisis stabilitas dan dinamika revisi vintage data antar-rilis menggunakan arsip 142 rilis WDI (`python unduh_data.py --arsip-wdi`).
+### Pemilihan satu nilai per sel (K-014 s.d. K-017)
+Silver menyimpan 1.439 baris, termasuk seluruh subkelompok WHO. `src/gold/aturan_pilih.py` menerapkan aturan secara berurutan, dan dampaknya ditulis otomatis ke `log-keputusan.csv`:
+
+| Keputusan | Aturan | Baris disisihkan |
+|---|---|---:|
+| K-014 | Snapshot terbaru per sel | 0 |
+| K-016 | Periode tahunan murni | 0 |
+| K-015 | Rincian sebanding: BPS/WDI `Total`, stunting/overweight `SEX=TOTAL`, wasting `SEX=TOTAL; AGE=TOTAL` | 697 |
+| K-017 | Penanda outlier/patahan, tanpa membuang baris | 0 |
+
+Hasilnya 742 baris terpilih (628 panel provinsi + 114 nasional), dan 697 baris subkelompok WHO tetap hanya di Silver. Hasil aturan ini dicocokkan dengan Gold kanonis di `src/gold/builder.py`; bila berbeda, pipeline berhenti.
+
+### Gold kanonis (K-019)
+| Tabel | Baris | Isi |
+|---|---:|---|
+| `panel_provinsi` | 628 | 38 provinsi × 2017–2025 × `var1473`/`var1474`, bentuk panjang, dengan `status_anomali`, `is_outlier` (45), `is_patahan` (24) |
+| `tabel_nasional` | 114 | 7 seri nasional berdampingan (BPS 9+9, WDI 24+10, WHO 25+25+12), dengan lineage |
+| `tabel_nasional_lebar` | 30 | Tampilan lebar 1996–2025, satu kolom per seri |
+| `rekonsiliasi` | 36 | BPS vs WDI per tahun, beserta selisih, kategori, dan penjelasan |
+
+### Rekonsiliasi BPS vs WDI (K-018)
+Pasangan ditetapkan dari definisi SDG yang sama: **PoU** `var1473` ↔ `SN.ITK.DEFC.ZS` (2.1.1) dan **FIES** `var1474` ↔ `SN.ITK.MSFI.ZS` (2.1.2). Tahun 2017–2024 berpasangan (16 baris). Tahun yang hanya ada di satu sisi (WDI 2001–2016, dan BPS 2025 yang belum dirilis WDI) tetap ditulis dengan kategori `tanpa pasangan` (20 baris). Selisihnya dijelaskan, tidak dihapus.
+
+| Tahun | BPS PoU | WDI PoU | Selisih | BPS FIES | WDI FIES | Selisih |
+|---|---:|---:|---:|---:|---:|---:|
+| 2017 | 8,23 | 6,0 | +2,23 | 8,66 | 7,6 | +1,06 |
+| 2018 | 7,92 | 6,0 | +1,92 | 6,86 | 7,0 | −0,14 |
+| 2019 | 7,63 | 6,4 | +1,23 | 5,42 | 5,8 | −0,38 |
+| 2020 | 8,34 | 6,6 | +1,74 | 5,12 | 5,1 | +0,02 |
+| 2021 | 8,49 | 6,7 | +1,79 | 4,79 | 4,9 | −0,11 |
+| 2022 | 10,21 | 6,6 | +3,61 | 4,85 | 4,7 | +0,15 |
+| 2023 | 8,53 | 6,5 | +2,03 | 4,50 | 4,5 | 0,00 |
+| 2024 | 8,27 | 6,3 | +1,97 | 4,02 | 4,2 | −0,18 |
+
+* **PoU: metode berbeda.** Angka BPS konsisten lebih tinggi daripada WDI, dengan selisih rata-rata +2,07 poin persen. BPS menghitung langsung dari konsumsi kalori SUSENAS, sedangkan WDI/FAO memakai model distribusi parametrik dengan parameter DEC global yang menghaluskan fluktuasi tahunan. Selisih terbesar terjadi pada 2022 (+3,61), saat angka BPS melonjak ke 10,21 sementara WDI tetap 6,6. Lonjakan ini perlu dicek terhadap catatan rilis SUSENAS 2022 sebelum disimpulkan.
+* **FIES: metode berbeda.** Kedua seri berimpit; sejak 2018 selisihnya tidak lebih dari 0,4 poin persen. Satu-satunya selisih besar ada pada 2017 (+1,06). BPS memakai modul FIES SUSENAS dengan kalibrasi nasional, sedangkan WDI/FAO memakai data dan kalibrasi skala global.
+* **WHO tidak direkonsiliasi.** Stunting, overweight, dan wasting balita (SDG 2.2) mengukur status gizi anak, bukan akses pangan rumah tangga. Ketiganya disandingkan di `tabel_nasional` sebagai konteks, tetapi selisihnya terhadap PoU/FIES tidak bermakna.
+* **Agenda Sprint 3:** dinamika revisi vintage WDI memakai arsip 142 rilis (`python unduh_data.py --arsip-wdi`), untuk menguji apakah sebagian selisih termasuk kategori `vintage berbeda`.
 
 ---
 
@@ -98,11 +129,14 @@ Integrasi pada kasus ini mempertemukan estimasi kerawanan pangan tingkat provins
     python -m src.common.skema data/silver/silver.parquet
     # Output: LOLOS 1,439 baris, 7 seri, 39 wilayah, 6 berkas sumber
     ```
+* **Validasi Gold, rekonsiliasi, dan SQL (Sprint 2):** 6 aturan Gold/rekonsiliasi (kunci unik panel dan nasional, satuan tunggal, keterlacakan setiap sel Gold ke Silver, setiap baris rekonsiliasi dijelaskan, rentang 0–100) ditambah 1 aturan SQL (jumlah baris SQL = Parquet). Total **19/19 aturan lolos** (`reports/validasi.md`). Pipeline berhenti bila ada aturan yang gagal.
 * **Keterulangan (Reproducibility):**
-  * Eksekusi satu perintah `python pipeline.py` dari berkas mentah menghasilkan ulang tabel `silver.parquet` secara deterministik (`seed=0`, hash data identik).
-  * Waktu jalan komputasi dari data mentah hingga Silver adalah **0,3 detik** pada laptop standar (CPU x86_64, RAM 8–16 GB), jauh melampaui batas efisiensi komputasi yang disyaratkan dosen ($\le 15$ menit), tanpa menggunakan komputasi awan berbayar.
+  * Satu perintah `python pipeline.py` menjalankan ekstraksi → Silver → Gold → SQL → validasi dari data mentah dan menulis `reports/ringkasan_pipeline.md`, yang berisi jumlah baris dan sidik sha256 setiap keluaran. Isinya deterministik.
+  * Uji klon bersih (`reports/reproduksi.md`): klon baru, lingkungan Python baru, `unduh_data.py --kasus 1`, lalu `pipeline.py`. Semua keluaran identik dengan yang di-*commit*, dengan waktu jalan sekitar 1 detik.
+  * `python -m unittest discover -s tests`: 25 tes lolos.
 * **Keterbatasan yang Tersisa:**
-  * Rekonsiliasi matriks panel Gold dan pengujian skalabilitas DuckDB/Dask terhadap arsip 142 rilis WDI menjadi agenda utama yang akan dituntaskan pada Sprint 2 dan Sprint 3.
+  * Pengujian skalabilitas terhadap arsip 142 rilis WDI (tahap 7) dikerjakan pada Sprint 3.
+  * Silver dibangun langsung dari berkas data mentah oleh `src/silver/builder.py`; keluaran tahap ekstraksi saat ini menjadi inventaris lineage (semua 14 berkas MANIFEST terbaca), belum menjadi masukan Silver.
 
 ---
 
