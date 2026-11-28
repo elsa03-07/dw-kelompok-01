@@ -2,9 +2,9 @@
 
 **Penyusun:** Tim Kelompok 1 (Pelaksana Komponen Validasi: 124450061 - Backlog #25)  
 **Total Baris Silver:** 1,439  
-**Status Lapis Gold:** Tersedia (6 tabel)  
-**Jumlah Aturan Diuji:** 18  
-**Jumlah Aturan Lolos:** 18  
+**Status Lapis Gold:** Tersedia (4 tabel kanonis)
+**Jumlah Aturan Diuji:** 19  
+**Jumlah Aturan Lolos:** 19  
 **Status Evaluasi:** SELURUH ATURAN LOLOS (100%)  
 
 ---
@@ -29,8 +29,9 @@
 | 14 | Keunikan Kunci Tabel Nasional Gold (sumber x seri x periode) | Gold & Rekon | **LOLOS** | 0 duplikasi dari 114 baris tabel nasional |
 | 15 | Konsistensi Satuan Tunggal per Indikator Gold ('persen') | Gold & Rekon | **LOLOS** | Seluruh indikator di Gold memiliki tepat 1 satuan terstandarisasi kanonis ('persen') |
 | 16 | Keterlacakan Seluruh Sel Gold ke Silver (Traceability Pasangan) | Gold & Rekon | **LOLOS** | 100% sel panel provinsi dan tabel nasional memiliki pasangan identik di layer Silver |
-| 17 | Kategori Sah pada Setiap Baris Rekonsiliasi Berpasangan | Gold & Rekon | **LOLOS** | Seluruh 18 pasangan rekonsiliasi memiliki kategori definitif valid ({'metode berbeda', 'definisi berbeda'}) |
+| 17 | Setiap Baris Rekonsiliasi Dijelaskan (berpasangan berkategori, sisanya 'tanpa pasangan') | Gold & Rekon | **LOLOS** | 16 baris berpasangan berkategori ['metode berbeda']; 20 baris tanpa pasangan; 0 'belum terjelaskan' |
 | 18 | Rentang Nilai Prevalensi Wajar Gold (0 - 100%) | Gold & Rekon | **LOLOS** | Seluruh nilai numerik pada panel provinsi dan tabel nasional berada dalam rentang [0.0, 100.0] |
+| 19 | Jumlah Baris SQL = Parquet untuk Silver dan Gold | SQL | **LOLOS** | 5 tabel cocok (silver 1439, panel_provinsi 628, tabel_nasional 114, tabel_nasional_lebar 30, rekonsiliasi 36) |
 
 ---
 
@@ -38,4 +39,5 @@
 1. **Keunikan Kunci Panel:** Panel provinsi (`seri_kode`, `wilayah_kode`, `periode`) dan tabel nasional (`sumber`, `seri_kode`, `periode`) terbukti 100% unik tanpa duplikasi.
 2. **Konsistensi Satuan:** Setiap indikator Gold memiliki tepat satu satuan kanonis (`persen`).
 3. **Keterlacakan Pasangan (Traceability):** 100% sel data Gold terbukti dapat dilacak secara deterministik ke sel asalnya di lapisan Silver dengan nilai numerik identik.
-4. **Kategori Rekonsiliasi:** Seluruh baris berpasangan pada tabel rekonsiliasi memiliki kategori penyebab selisih yang definitif (`definisi berbeda` dan `metode berbeda`) tanpa ada nilai yang kosong atau belum terjelaskan.
+4. **Kategori Rekonsiliasi:** Baris berpasangan (BPS vs WDI pada periode yang sama) wajib memiliki selisih dan kategori penyebab selisih; baris yang hanya ada di salah satu sisi wajib berlabel `tanpa pasangan` beserta penjelasannya. Kategori `belum terjelaskan` tidak boleh muncul.
+5. **SQL (Backlog #23):** Setelah `pipeline.py` memuat Silver dan Gold ke `data/capstone.sqlite`, jumlah baris dan jumlah kolom `nilai` setiap tabel dibandingkan dengan Parquet sumbernya.

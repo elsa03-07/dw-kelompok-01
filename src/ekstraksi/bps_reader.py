@@ -1,89 +1,79 @@
-import pandas as pd
-import hashlib
+"""Pembaca berkas mentah BPS (CSV datar dan JSON WebAPI). Milik tim — 124450112.
+
+Keluaran setia pada sumber: kolom asli dipertahankan, tidak ada pembersihan. Setiap baris
+diberi _berkas_raw (relatif data/raw/) dan _sha256_raw (dari MANIFEST.csv).
+"""
 import json
-
-def baca_bps_csv(filepath):
-    # Fungsi untuk membaca dan membersihkan file CSV BPS
-    pass
-
-def baca_bps_json(filepath):
-    # Fungsi untuk membaca dan membersihkan file JSON BPS
-    pass
-    
+from pathlib import Path
 
 import pandas as pd
-import hashlib
-import json
-import os
 
-def baca_bps_csv(filepath):
-    """
-    Fungsi untuk membaca dan membersihkan file CSV dari BPS.
-    Mengubah format menjadi tabel panjang (long table) serta menambahkan berkas_raw dan sha256_raw.
-    """
-    # Membaca file CSV (sesuaikan encoding jika diperlukan, misal utf-8 atau latin1)
-    df = pd.read_csv(filepath, sep=None, engine='python')
-    
-    # Simpan nama berkas mentah dan hitung hash SHA-256 sebagai identifikasi berkas
-    berkas_nama = os.path.basename(filepath)
-    with open(filepath, "rb") as f:
-        file_bytes = f.read()
-        sha256_val = hashlib.sha256(file_bytes).hexdigest()
-        
-    df['berkas_raw'] = berkas_nama
-    df['sha256_raw'] = sha256_val
-    
-    return df
+from src.common.manifest import RAW
+from src.ekstraksi._umum import baca_json_metadata, beri_lineage
 
-def baca_bps_json(filepath):
-    """
-    Fungsi untuk membaca file JSON dari BPS dan mengubahnya menjadi DataFrame Pandas.
-    """
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        
-    # Mengubah data JSON ke dalam DataFrame
-    df = pd.DataFrame(data)
-    
-    berkas_nama = os.path.basename(filepath)
-    with open(filepath, "rb") as f:
-        file_bytes = f.read()
-        sha256_val = hashlib.sha256(file_bytes).hexdigest()
-        
-    df['berkas_raw'] = berkas_nama
-    df['sha256_raw'] = sha256_val
-    
-    return df
 
-if __name__ == "__main__":
-    print("Modul pembaca BPS berhasil dimuat!")
+def baca_bps_csv(path, raw=RAW):
+    return beri_lineage(pd.read_csv(path, dtype=str), path, raw)
 
-if __name__ == "__main__":
-    # Contoh jalur file CSV BPS dari folder data/raw/bps/2026-10-17/
-    path_contoh = "data/raw/bps/2026-10-17/sdg4_apk.csv"
-    
-    try:
-        df_hasil = baca_bps_csv(path_contoh)
-        print("Berhasil membaca file CSV!")
-        print(df_hasil[['berkas_raw', 'sha256_raw']].head(2))
-    except Exception as e:
-        print(f"Terjadi kesalahan: {e}")
 
-if __name__ == "__main__":
-    # Uji coba CSV
-    path_csv = "data/raw/bps/2026-10-17/sdg4_apk.csv"
-    try:
-        df_csv = baca_bps_csv(path_csv)
-        print("Berhasil membaca file CSV!")
-        print(df_csv[['berkas_raw', 'sha256_raw']].head(1))
-    except Exception as e:
-        print(f"Error CSV: {e}")
+def baca_bps_json(path, raw=RAW):
+    """Ratakan 'datacontent' WebAPI BPS. Kunci = wilayah + var + turvar + tahun + turtahun."""
+    with open(path, encoding="utf-8") as f:
+        halaman = json.load(f)
+    if isinstance(halaman, dict):
+        halaman = [halaman]
+    baris = []
+    for nomor, h in enumerate(halaman):
+        wilayah = {str(v["val"]): v["label"] for v in h.get("vervar", [])}
+        tahun = {str(v["val"]): v["label"] for v in h.get("tahun", [])}
+        var = {str(v["val"]): v for v in h.get("var", [])}
+        turvar = {str(v["val"]) for v in h.get("turvar", [])}
+        turtahun = {str(v["val"]) for v in h.get("turtahun", [])}
+        for kunci, nilai in (h.get("datacontent") or {}).items():
+            cocok = _urai_kunci(kunci, wilayah, var, turvar, tahun, turtahun)
+            if cocok is None:
+                raise ValueError(f"{path}: kunci datacontent tidak dapat diurai: {kunci}")
+            w, v, tv, t, tt = cocok
+            baris.append({
+                "halaman": nomor, "kunci_datacontent": kunci,
+                "wilayah_id": w, "wilayah": wilayah[w], "var_id": v, "var": var[v]["label"],
+                "satuan": var[v].get("unit"), "turvar_id": tv, "tahun_id": t, "tahun": tahun[t],
+                "turtahun_id": tt, "nilai": nilai, "last_update": h.get("last_update"),
+            })
+    return beri_lineage(pd.DataFrame(baris), path, raw)
 
-    # Uji coba JSON menggunakan file manifest_asal.json yang ada di folder 2026-10-20
-    path_json = "data/raw/bps/2026-10-20/manifest_asal.json"
-    try:
-        df_json = baca_bps_json(path_json)
-        print("Berhasil membaca file JSON!")
-        print(df_json[['berkas_raw', 'sha256_raw']].head(1))
-    except Exception as e:
-        print(f"Error JSON: {e}")
+
+def _urai_kunci(kunci, wilayah, var, turvar, tahun, turtahun):
+    for w in wilayah:
+        if not kunci.startswith(w):
+            continue
+        sisa = kunci[len(w):]
+        for v in var:
+            if not sisa.startswith(v):
+                continue
+            sisa2 = sisa[len(v):]
+            for tv in turvar:
+                if not sisa2.startswith(tv):
+                    continue
+                sisa3 = sisa2[len(tv):]
+                for t in tahun:
+                    if sisa3.startswith(t) and sisa3[len(t):] in turtahun:
+                        return w, v, tv, t, sisa3[len(t):]
+    return None
+
+
+def baca_semua(raw=RAW):
+    """{berkas relatif: DataFrame} untuk semua berkas BPS di data/raw/bps/."""
+    raw = Path(raw)
+    hasil = {}
+    for path in sorted((raw / "bps").rglob("*")):
+        if path.suffix == ".csv":
+            df = baca_bps_csv(path, raw)
+        elif path.suffix == ".json" and path.parent.name == "json":
+            df = baca_bps_json(path, raw)
+        elif path.suffix == ".json":
+            df = baca_json_metadata(path, raw)
+        else:
+            continue
+        hasil[df["_berkas_raw"].iat[0]] = df
+    return hasil

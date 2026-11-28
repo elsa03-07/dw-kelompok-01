@@ -1,66 +1,41 @@
+"""Pembaca berkas mentah World Bank WDI (JSON API [halaman, data] dan metadata). Milik tim — 124450112."""
 import json
-import hashlib
 from pathlib import Path
+
 import pandas as pd
 
-def hitung_sha256(file_path):
-    """Menghitung hash SHA-256 dari berkas mentah."""
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest()
+from src.common.manifest import RAW
+from src.ekstraksi._umum import baca_json_metadata, beri_lineage
 
-def baca_wdi(file_path):
-    """
-    Membaca berkas WDI JSON, menyaring berdasarkan indicator.id (SN.ITK.DEFC.ZS & SN.ITK.MSFI.ZS),
-    mengekstraksi metadata raw, serta mengubah struktur data menjadi tabel panjang (tidy data).
-    """
-    path_obj = Path(file_path)
-    berkas_raw = str(path_obj)
-    sha256_raw = hitung_sha256(path_obj)
-    
-    with open(path_obj, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        
-    parsed_rows = []
-    target_indicators = {'SN.ITK.DEFC.ZS', 'SN.ITK.MSFI.ZS'}
-    
-    # Format World Bank API: data[0] adalah metadata, data[1] adalah list data aktual
-    if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list):
-        records = data[1]
-        for item in records:
-            if isinstance(item, dict):
-                indicator_dict = item.get('indicator', {})
-                ind_id = indicator_dict.get('id') if isinstance(indicator_dict, dict) else None
-                
-                # Saring hanya untuk seri indikator kasus 1
-                if ind_id in target_indicators:
-                    country_dict = item.get('country', {})
-                    row = {
-                        'country_code': country_dict.get('id') if isinstance(country_dict, dict) else None,
-                        'country_name': country_dict.get('value') if isinstance(country_dict, dict) else None,
-                        'indicator_id': ind_id,
-                        'indicator_name': indicator_dict.get('value') if isinstance(indicator_dict, dict) else None,
-                        'year': item.get('date'),
-                        'value': item.get('value'),
-                        '_berkas_raw': berkas_raw,
-                        '_sha256_raw': sha256_raw
-                    }
-                    parsed_rows.append(row)
-                
-    df = pd.DataFrame(parsed_rows)
-    return df
+SERI_KASUS = {"SN.ITK.DEFC.ZS", "SN.ITK.MSFI.ZS"}
 
-if __name__ == "__main__":
-    dir_wdi = Path("data/raw/wdi/2026-10-20/data")
-    
-    if dir_wdi.exists():
-        total_baris_global = 0
-        for file_json in dir_wdi.glob("*.json"):
-            df_hasil = baca_wdi(file_json)
-            print(f"Berkas: {file_json.name} | Jumlah Baris Terfiltrasi: {len(df_hasil)}")
-            total_baris_global += len(df_hasil)
-        print(f"\nTotal keseluruhan baris WDI setelah filter seri kasus: {total_baris_global}")
-    else:
-        print(f"Direktori {dir_wdi} tidak ditemukan.")
+
+def baca_wdi(path, raw=RAW):
+    """Ratakan JSON data WDI. Semua indikator dalam berkas dipertahankan (penyaringan seri di Silver)."""
+    with open(path, encoding="utf-8") as f:
+        isi = json.load(f)
+    if not (isinstance(isi, list) and len(isi) == 2 and isinstance(isi[1], list)):
+        raise ValueError(f"{path}: bukan format API WDI [halaman, data]")
+    baris = [{
+        "indicator_id": (r.get("indicator") or {}).get("id"),
+        "indicator_name": (r.get("indicator") or {}).get("value"),
+        "country_id": (r.get("country") or {}).get("id"),
+        "countryiso3code": r.get("countryiso3code"),
+        "country_name": (r.get("country") or {}).get("value"),
+        "date": r.get("date"),
+        "value": r.get("value"),
+        "unit": r.get("unit"),
+        "obs_status": r.get("obs_status"),
+        "decimal": r.get("decimal"),
+    } for r in isi[1]]
+    return beri_lineage(pd.DataFrame(baris), path, raw)
+
+
+def baca_semua(raw=RAW):
+    """{berkas relatif: DataFrame} untuk semua berkas WDI di data/raw/wdi/."""
+    raw = Path(raw)
+    hasil = {}
+    for path in sorted((raw / "wdi").rglob("*.json")):
+        df = baca_wdi(path, raw) if path.parent.name == "data" else baca_json_metadata(path, raw)
+        hasil[df["_berkas_raw"].iat[0]] = df
+    return hasil
